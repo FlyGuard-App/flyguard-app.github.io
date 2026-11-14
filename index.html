@@ -464,7 +464,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       tuer: makeGrid(range(80, 200), range(200, 260), function (w, h) { return 500 + 37.5 * (w - 90) / 10 + 15 * (h - 210) / 10; })
     }
   };
-  var APP_VERSION = '14.11.2026 · 7v';
+  var APP_VERSION = '14.11.2026 · 7w';
   var KEY_STATE = 'flyguard-erfassung-v1', KEY_MASTER = 'flyguard-stammdaten-v2';
   // «lauf» (flache Laufschiene: 'Ja' / 'Nein' / '') hat kein Eingabefeld, sondern den Ja/Nein-Schalter
   // Tiefe wird seit 7h nicht mehr erfasst (alte Aufträge behalten ihre Tiefe im Excel)
@@ -1037,17 +1037,57 @@ textarea.in { min-height: 64px; resize: vertical; }
     txt(NAVY, F, 'bold', FZ);
     doc.text('Gesamtbetrag CHF ' + fmt2.format(o.totals.total), R, y, { align: 'right' });
 
-    // Bedingungen: Überschrift, dann je Punkt der Titel fett auf eigener Zeile und der Text darunter.
-    // Mit dry = true wird nur gemessen. Gibt die Grundlinie der letzten Zeile zurück.
-    function prepTerms(list) { return list.map(function (t) { return [t[0], wrap(t[1])]; }); }
-    function drawTerms(head, list, ty, dry) {
-      if (!dry) { txt(NAVY, F, 'bold', FZ); doc.text(head, L, ty); }
-      list.forEach(function (t) {
-        ty += LH + GAP;
-        if (!dry) { txt(INK, F, 'bold', FZ); doc.text(t[0], L, ty); txt(INK, F, 'normal', FZ); lines(t[1], L, ty + LH); }
-        ty += t[1].length * LH;
+    // Bedingungen in zwei Spalten, direkt unter dem Gesamtbetrag (freigegeben 14.11.2026).
+    // Je Punkt: Titel fett auf eigener Zeile, Text darunter; ein Punkt wird nie getrennt.
+    // Passt alles samt Abschluss (Unterschriften bzw. Gruss) auf die Seite, werden die Spalten gleich hoch verteilt.
+    // Sonst geht es fliessend weiter (Spalte 1, Spalte 2, nächste Seite). Der Abschluss folgt direkt nach dem
+    // letzten Punkt und steht nie allein: mindestens ein Punkt kommt mit auf seine Seite.
+    var CW2 = (R - L - 8) / 2, BOT = 273;   // Spaltenbreite; tiefste Grundlinie über der Fusszeile
+    function prepCols(list) { return list.map(function (t) { txt(INK, F, 'bold', FZ); var th = doc.splitTextToSize(t[0], CW2); return { th: th, tb: wrap(t[1], CW2) }; }); }
+    function termH(t) { return (t.th.length + t.tb.length - 1) * LH; }
+    function seqH(seq) { var h = 0; seq.forEach(function (t, i) { h += (i ? LH + GAP : 0) + termH(t); }); return h; }
+    function balanceCols(seq) {
+      var best = null;
+      for (var k = 1; k <= seq.length; k++) { var a = seq.slice(0, k), b = seq.slice(k), h = Math.max(seqH(a), b.length ? seqH(b) : 0); if (!best || h < best.h) best = { a: a, b: b, h: h }; }
+      return best;
+    }
+    function planCols(terms, firstY, tailNeed) {
+      var pages = [], rest = terms.slice(), y0 = firstY;
+      while (rest.length) {
+        var bal = balanceCols(rest);
+        if (y0 + bal.h + tailNeed <= BOT) { pages.push({ y: y0, cols: [bal.a, bal.b], end: y0 + bal.h }); break; }
+        var cols = [[], []], ci = 0, cy = y0;
+        while (rest.length > 1 && ci < 2) {
+          var st = cols[ci].length ? cy + LH + GAP : y0;
+          if (st + termH(rest[0]) <= BOT) { cy = st + termH(rest[0]); cols[ci].push(rest.shift()); } else { ci++; }
+        }
+        pages.push({ y: y0, cols: cols, end: null });
+        y0 = 30;
+      }
+      return pages;
+    }
+    // Zeichnet Überschrift und Punkte; makeList(agbRef) liefert die Punkte. Gibt die Grundlinie des letzten Punkts zurück.
+    function drawCols(head, makeList, hy, tailNeed) {
+      var pl = planCols(prepCols(makeList('Seite 9')), hy + LH + GAP, tailNeed);
+      // Überschrift nie allein: passt unter ihr kein Punkt mehr, beginnt alles auf der nächsten Seite
+      if (!pl[0].cols[0].length) { doc.addPage(); hy = 30; pl = planCols(prepCols(makeList('Seite 9')), hy + LH + GAP, tailNeed); }
+      // Seitenangabe der AGB erst jetzt, wenn feststeht, wie viele Seiten die Bedingungen brauchen
+      pl = planCols(prepCols(makeList('Seite ' + (doc.getNumberOfPages() + pl.length))), hy + LH + GAP, tailNeed);
+      txt(NAVY, F, 'bold', FZ); doc.text(head, L, hy);
+      var endY = 0;
+      pl.forEach(function (pg, pi) {
+        if (pi) doc.addPage();
+        pg.cols.forEach(function (col, ci) {
+          var cy = pg.y, x = L + ci * (CW2 + 8);
+          col.forEach(function (t, k) {
+            if (k) cy += LH + GAP;
+            txt(INK, F, 'bold', FZ); var e = lines(t.th, x, cy);
+            txt(INK, F, 'normal', FZ); cy = lines(t.tb, x, e + LH);
+          });
+        });
+        endY = pg.end;
       });
-      return ty;
+      return endY;
     }
     // Gruss mit eigener Unterschrift (falls hinterlegt) und Firmenname; closingH = Höhe ab der Gruss-Zeile
     var closingH = ownSig ? 2.5 + 16 + LH : LH + GAP;
@@ -1060,10 +1100,8 @@ textarea.in { min-height: 64px; resize: vertical; }
 
     if (isB) {
       // Auftragsbestätigung: Bedingungen (ohne «Kundenbesuch», der Kunde unterschreibt hier nicht),
-      // danach der Gruss; alles bleibt zusammen und rutscht nie in die Fusszeile
-      var by2 = y + LH + SEC, bt = prepTerms(confirmTerms(o.totals.total, nextAgbRef()));
-      if (drawTerms('Bedingungen', bt, by2, true) + LH + SEC + closingH > 274) { doc.addPage(); by2 = 30; bt = prepTerms(confirmTerms(o.totals.total, nextAgbRef())); }
-      closing(drawTerms('Bedingungen', bt, by2) + LH + SEC);
+      // danach direkt der Gruss
+      closing(drawCols('Bedingungen', function (ref) { return confirmTerms(o.totals.total, ref); }, y + LH + SEC, LH + SEC + closingH) + LH + SEC);
     } else if (!isK) {
       // Offerte: Gültigkeit, Garantie und Hinweis auf die AGB, dann Beratung und Gruss
       var oy = y + LH + SEC;
@@ -1077,11 +1115,9 @@ textarea.in { min-height: 64px; resize: vertical; }
       var oe = lines(ps[1], L, lines(ps[0], L, oy) + LH + GAP);
       closing(oe + LH + SEC);
     } else {
-      // Kaufvertrag: Bedingungen und Unterschriften bleiben zusammen. Unterschriften immer unten, knapp oberhalb
-      // der Fusszeile. Reicht der Platz auf der Seite nicht, kommen beide zusammen auf eine neue Seite.
-      var sy = 266, ty = y + LH + SEC, terms = prepTerms(contractTerms(o.totals.total, nextAgbRef()));
-      if (drawTerms('Vertragsbedingungen', terms, ty, true) > sy - 24) { doc.addPage(); ty = 30; terms = prepTerms(contractTerms(o.totals.total, nextAgbRef())); }
-      drawTerms('Vertragsbedingungen', terms, ty);
+      // Kaufvertrag: Unterschriften direkt nach dem letzten Punkt. sy = Unterschriftslinie; darüber bis 22 mm
+      // Platz für die Unterschrift des Kunden, darunter die Beschriftung (zusammen 24 + 4.3 mm)
+      var sy = drawCols('Vertragsbedingungen', function (ref) { return contractTerms(o.totals.total, ref); }, y + LH + SEC, 24 + 4.3) + 24;
       txt(INK, F, 'normal', FZ);
       doc.text([o.signPlace, o.dateText].filter(Boolean).join(', '), L, sy - 1.5);
       if (o.signature) {
