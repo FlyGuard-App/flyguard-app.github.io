@@ -19,6 +19,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <style>
 /* Layout: eine schmale Spalte für das iPhone im Hochformat; Abschnitte als Karten; Produkt-Formular direkt im Abschnitt, erfasste Produkte als Liste darunter */
 :root {
@@ -457,14 +458,16 @@ textarea.in { min-height: 64px; resize: vertical; }
       { name: 'Plissee zweiflügelig', beschreibung: 'Mit Magnetverschluss', lauf: true }, { name: 'Plissee zweiflügelig, Mitte schliessend', beschreibung: 'Mit Magnetverschluss', lauf: true }],
     farben: ['Weiss', 'Anthrazit', 'Sonstige'],
     gewebe: ['Normal', 'Pollenschutz'],
-    firma: { firma: 'FlyGuard Arifi', strasse: 'Rebrainstrasse 17', plzOrt: '8106 Adlikon b. Regensdorf', telefon: '076 419 40 47', email: 'info@flyguard.ch', web: '', uid: 'CHE-225.710.567', gueltigTage: 30, zahlungsfrist: 30, garantieJahre: 2 },
+    firma: { firma: 'FlyGuard Arifi', strasse: 'Rebrainstrasse 17', plzOrt: '8106 Adlikon b. Regensdorf', telefon: '076 419 40 47', email: 'info@flyguard.ch', web: '', uid: 'CHE-225.710.567', gueltigTage: 30, zahlungsfrist: 30, garantieJahre: 2, mahnAbstand: 10,
+      // Bankangaben für den QR-Zahlteil kommen nur aus dem Büro-Excel (Blatt «Einstellungen»), nie aus dem Code
+      iban: '', kontoinhaber: '', kontoStrasse: '', kontoPlzOrt: '' },
     regeln: { fenster: { abHoehe: 0, aufB: 20, aufH: 15, rund: 5 }, tuer: { abHoehe: 200, aufB: 37.5, aufH: 15, rund: 5 } },
     raster: {
       fenster: makeGrid(range(70, 150), range(100, 190), function (w, h) { return 200 + 20 * (w - 70) / 10 + 15 * (h - 100) / 10; }),
       tuer: makeGrid(range(80, 200), range(200, 260), function (w, h) { return 500 + 37.5 * (w - 90) / 10 + 15 * (h - 210) / 10; })
     }
   };
-  var APP_VERSION = '14.11.2026 · 7y';
+  var APP_VERSION = '14.11.2026 · 7z';
   var KEY_STATE = 'flyguard-erfassung-v1', KEY_MASTER = 'flyguard-stammdaten-v2';
   // «lauf» (flache Laufschiene: 'Ja' / 'Nein' / '') hat kein Eingabefeld, sondern den Ja/Nein-Schalter
   // Tiefe wird seit 7h nicht mehr erfasst (alte Aufträge behalten ihre Tiefe im Excel)
@@ -786,11 +789,22 @@ textarea.in { min-height: 64px; resize: vertical; }
       var blob2 = await makePdf(Object.assign({ kind: 'direkt', signature: cv.toDataURL('image/png') }, base));
       var blob3 = await makePdf(Object.assign({ kind: 'bestaetigung', offerDate: dateCH(addDays(now, -7)) }, base));
       lastPreview = [URL.createObjectURL(blob), URL.createObjectURL(blob2), URL.createObjectURL(blob3)];
+      // Rechnung und 2. Mahnung nur mit gültigen Bankangaben aus dem Büro-Excel
+      var pay = payInfo(), fiP = firma();
+      if (!pay.err) {
+        var blob4 = await makePdf(Object.assign({ kind: 'rechnung', montageDate: dateCH(now), dueDate: dateCH(addDays(now, fiP.zahlungsfrist || 30)), pay: pay }, base));
+        var blob5 = await makePdf(Object.assign({ kind: 'mahnung', stufe: 2, invoiceDate: dateCH(addDays(now, -50)), invoiceDue: dateCH(addDays(now, -50 + (fiP.zahlungsfrist || 30))),
+          lastReminder: dateCH(addDays(now, -(fiP.mahnAbstand || 10))), dueDate: dateCH(addDays(now, fiP.mahnAbstand || 10)), pay: pay }, base));
+        lastPreview.push(URL.createObjectURL(blob4), URL.createObjectURL(blob5));
+      }
       dialog('<h3>Muster-PDF</h3><p>So sehen die Dokumente aus (mit deinen Eingaben oder Beispieldaten).</p><div class="acts">' +
         '<a class="btn primary" href="' + lastPreview[0] + '" target="_blank" rel="noopener">Muster-Offerte öffnen</a>' +
         '<a class="btn" href="' + lastPreview[1] + '" target="_blank" rel="noopener">Muster-Kaufvertrag öffnen</a>' +
         '<a class="btn" href="' + lastPreview[2] + '" target="_blank" rel="noopener">Muster-Auftragsbestätigung öffnen</a>' +
-        '<button class="btn" data-act="close">Schliessen</button></div>');
+        (lastPreview[3] ? '<a class="btn" href="' + lastPreview[3] + '" target="_blank" rel="noopener">Muster-Rechnung öffnen</a>' +
+          '<a class="btn" href="' + lastPreview[4] + '" target="_blank" rel="noopener">Muster-Mahnung öffnen</a>' : '') +
+        '<button class="btn" data-act="close">Schliessen</button></div>' +
+        (pay.err ? '<p class="fine">Rechnung und Mahnung: ' + esc(pay.err) + '</p>' : ''));
     } catch (e) {
       state.elements = saved;
       dialog('<h3>PDF-Fehler</h3><div class="err-box">' + esc(e.message || String(e)) + '</div><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
@@ -919,8 +933,10 @@ textarea.in { min-height: 64px; resize: vertical; }
       try {
         var es = await tableRows('tblEinstellungen'), map = {};
         es.forEach(function (r) { map[trimmed(r[0]).toLowerCase()] = trimmed(r[1]); });
-        var KEYS = { firma: 'firma', strasse: 'strasse', plzOrt: 'plz ort', telefon: 'telefon', email: 'e-mail', web: 'webseite', uid: 'uid' };
+        var KEYS = { firma: 'firma', strasse: 'strasse', plzOrt: 'plz ort', telefon: 'telefon', email: 'e-mail', web: 'webseite', uid: 'uid',
+          iban: 'iban', kontoinhaber: 'kontoinhaber', kontoStrasse: 'kontoinhaber strasse', kontoPlzOrt: 'kontoinhaber plz ort' };
         Object.keys(KEYS).forEach(function (k) { if (KEYS[k] in map) fa[k] = map[KEYS[k]]; });
+        if (Number(map['mahnung abstand tage']) > 0) fa.mahnAbstand = Number(map['mahnung abstand tage']);
         if (Number(map['offerte gültig tage']) > 0) fa.gueltigTage = Number(map['offerte gültig tage']);
         if (Number(map['zahlungsfrist tage']) > 0) fa.zahlungsfrist = Number(map['zahlungsfrist tage']);
         if (Number(map['garantie jahre']) > 0) fa.garantieJahre = Number(map['garantie jahre']);
@@ -955,6 +971,39 @@ textarea.in { min-height: 64px; resize: vertical; }
   function firma() { return master.firma || DEFAULTS.firma; }
   function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
 
+  // ---- Rechnung und Mahnungen: Bankangaben und QR-Hilfen ----
+  var MAHN_GEB = 20;   // AGB Ziffer 10: 1. Mahnung kostenlos, 2. und 3. Mahnung je CHF 20
+  function dunTotal(total, stufe) { return round((Number(total) || 0) + (stufe >= 2 ? MAHN_GEB : 0) + (stufe >= 3 ? MAHN_GEB : 0), 2); }
+  function splitStreet(s) { s = trimmed(s); var m = s.match(/^(.*?)\s+(\d+\s?[a-zA-Z]?)$/); return m ? [m[1], m[2]] : [s, '']; }
+  function splitPlzOrt(s) { s = trimmed(s); var m = s.match(/^(\d{4})\s+(.+)$/); return m ? [m[1], m[2]] : ['', s]; }
+  // RF-Referenz nach ISO 11649 (Prüfziffer Modulo 97)
+  function rfRef(body) {
+    body = String(body).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    var num = (body + 'RF00').replace(/[A-Z]/g, function (ch) { return String(ch.charCodeAt(0) - 55); }), mod = 0;
+    for (var i = 0; i < num.length; i++) mod = (mod * 10 + Number(num.charAt(i))) % 97;
+    return 'RF' + String(98 - mod).padStart(2, '0') + body;
+  }
+  function group4(s) { return String(s).replace(/(.{4})/g, '$1 ').trim(); }
+  function amountText(v) { return Number(v).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }   // 1 310.00 (Vorgabe Zahlteil)
+  function ibanOk(iban) {
+    if (!/^(CH|LI)\d{2}[0-9A-Z]{17}$/.test(iban)) return false;
+    var s = iban.slice(4) + iban.slice(0, 4), m = 0;
+    for (var i = 0; i < s.length; i++) { var ch = s.charAt(i), v = /[A-Z]/.test(ch) ? String(ch.charCodeAt(0) - 55) : ch; for (var j = 0; j < v.length; j++) m = (m * 10 + Number(v.charAt(j))) % 97; }
+    return m === 1;
+  }
+  // Bankangaben aus dem Büro-Excel prüfen; bei einem Fehler { err: Text }
+  function payInfo() {
+    var fi = firma(), iban = String(fi.iban || '').replace(/\s/g, '').toUpperCase();
+    var name = trimmed(fi.kontoinhaber), strasse = trimmed(fi.kontoStrasse) || trimmed(fi.strasse), plzOrt = trimmed(fi.kontoPlzOrt) || trimmed(fi.plzOrt);
+    var fix = ' Bitte im Büro-Excel im Blatt «Einstellungen» korrigieren und danach im Menü «Preise und Listen neu laden» tippen.';
+    if (!iban || !name) return { err: 'IBAN oder Kontoinhaber fehlen.' + fix };
+    if (!ibanOk(iban)) return { err: 'Die IBAN ' + fi.iban + ' ist ungültig.' + fix };
+    var iid = Number(iban.substr(4, 5));
+    if (iid >= 30000 && iid <= 31999) return { err: 'Das ist eine QR-IBAN. Für die Rechnung braucht es die normale IBAN des Kontos.' + fix };
+    if (!splitPlzOrt(plzOrt)[0]) return { err: 'PLZ und Ort des Kontoinhabers fehlen (z. B. «8106 Adlikon bei Regensdorf»).' + fix };
+    return { iban: iban, name: name, strasse: strasse, plzOrt: plzOrt };
+  }
+
   async function makePdf(o) {
     var assets = await loadPdfAssets();
     var J = window.jspdf.jsPDF, doc = new J({ unit: 'mm', format: 'a4', compress: true });
@@ -965,8 +1014,9 @@ textarea.in { min-height: 64px; resize: vertical; }
       doc.addFileToVFS('Mont-S.ttf', assets.fonts.semibold); doc.addFont('Mont-S.ttf', 'MontserratSemi', 'normal');
       F = 'Montserrat'; FS = 'MontserratSemi'; semi = 'normal';
     }
-    // Arten: 'offerte', 'direkt' (Kaufvertrag mit Unterschrift), 'bestaetigung' (Auftragsbestätigung nach angenommener Offerte)
-    var fi = firma(), L = 20, R = 190, isK = o.kind === 'direkt', isB = o.kind === 'bestaetigung';
+    // Arten: 'offerte', 'direkt' (Kaufvertrag mit Unterschrift), 'bestaetigung' (Auftragsbestätigung nach angenommener Offerte),
+    // 'rechnung' und 'mahnung' (mit QR-Zahlteil; o.pay = Bankangaben aus payInfo(), Mahnung zusätzlich o.stufe 1–3)
+    var fi = firma(), L = 20, R = 190, isK = o.kind === 'direkt', isB = o.kind === 'bestaetigung', isR = o.kind === 'rechnung', isM = o.kind === 'mahnung';
     function txt(color, font, style, size) { doc.setTextColor(color[0], color[1], color[2]); doc.setFont(font, style); doc.setFontSize(size); }
     function fitImg(data, maxW, maxH) { var p = doc.getImageProperties(data), w = maxW, h = w * p.height / p.width; if (h > maxH) { h = maxH; w = h * p.width / p.height; } return { w: w, h: h }; }
     // Einheitliche Schrift auf allen Seiten: alles 9 pt (FZ), nur der Titel (15 pt) und die Fusszeile (7.5 pt) weichen ab.
@@ -976,6 +1026,73 @@ textarea.in { min-height: 64px; resize: vertical; }
     function lines(arr, x, y, opt) { arr.forEach(function (s, i) { doc.text(s, x, y + i * LH, opt || {}); }); return y + (arr.length - 1) * LH; }
     function wrap(s, w) { txt(INK, F, 'normal', FZ); return doc.splitTextToSize(s, w || (R - L)); }
     function nextAgbRef() { return 'Seite ' + (doc.getNumberOfPages() + 1); }   // die AGB kommen immer als letzte Seite
+
+    // QR-Zahlteil mit Empfangsschein (Swiss QR Code nach den SIX-Vorgaben), A6 quer ganz unten auf der Seite.
+    // Schrift laut Vorgabe Helvetica, Grössen vorgeschrieben: Titel 11 pt, Überschriften 8 pt (Empfangsschein 6 pt),
+    // Werte 10 pt (Empfangsschein 8 pt). Referenz: RF-Referenz aus der Auftragsnummer (2026-15 → RF.. 2026 0015).
+    var QR_TOP = 192;   // Oberkante des Zahlteils; der Inhalt darüber endet spätestens 6 mm davor
+    function qrBill(pay, amount, cust, msg, orderNo) {
+      var y0 = QR_TOP, cs = splitStreet(pay.strasse), cp = splitPlzOrt(pay.plzOrt), ds = splitStreet(cust.strasse);
+      var dname = [cust.vorname, cust.nachname].filter(Boolean).join(' '), dplz = trimmed(cust.plz), dort = trimmed(cust.ort);
+      var hasDeb = !!(dname && dplz && dort);   // ohne vollständige Adresse bleibt «Zahlbar durch» leer zum Ausfüllen
+      var om = String(orderNo).match(/^(\d{4})-(\d+)$/), ref = rfRef(om ? om[1] + om[2].padStart(4, '0') : orderNo);
+      var data = ['SPC', '0200', '1', pay.iban, 'S', pay.name, cs[0], cs[1], cp[0], cp[1], 'CH', '', '', '', '', '', '', '',
+        Number(amount).toFixed(2), 'CHF'].concat(hasDeb ? ['S', dname, ds[0], ds[1], dplz, dort, 'CH'] : ['', '', '', '', '', '', ''],
+        ['SCOR', ref, msg, 'EPD']).join('\r\n');
+      // Trennlinien mit Scherensymbol (Versand als PDF)
+      doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.2);
+      doc.line(0, y0, 210, y0); doc.line(62, y0, 62, 297);
+      doc.setFillColor(255, 255, 255); doc.rect(4, y0 - 1.6, 5.5, 3.2, 'F'); doc.rect(60.4, y0 + 3, 3.2, 5.5, 'F');
+      doc.setTextColor(0, 0, 0); doc.setFont('zapfdingbats', 'normal'); doc.setFontSize(10);
+      doc.text('"', 4.5, y0 + 1.25); doc.text('"', 60.75, y0 + 3.5, { angle: -90 });
+      function H(size, bold) { doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(0, 0, 0); }
+      function block(x, y, head, vals, hs, vs, lh) {
+        H(hs, true); doc.text(head, x, y); y += lh;
+        H(vs, false); vals.filter(Boolean).forEach(function (v) { doc.text(v, x, y); y += lh; });
+        return y + lh * 0.5;
+      }
+      // leeres Feld mit Eckmarken (Zahlbar durch ohne Adresse)
+      function corners(x, y, w, h) {
+        doc.setLineWidth(0.26); var k = 3;
+        [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]].forEach(function (c) { doc.line(c[0], c[1], c[0] + k * c[2], c[1]); doc.line(c[0], c[1], c[0], c[1] + k * c[3]); });
+      }
+      var cred = [group4(pay.iban), pay.name, trimmed(pay.strasse), trimmed(pay.plzOrt)];
+      var debL = hasDeb ? [dname, trimmed(cust.strasse), dplz + ' ' + dort] : [];
+      // Empfangsschein (links, 62 mm)
+      H(11, true); doc.text('Empfangsschein', 5, y0 + 8);
+      var ry = block(5, y0 + 14.2, 'Konto / Zahlbar an', cred, 6, 8, 3.2);
+      ry = block(5, ry, 'Referenz', [group4(ref)], 6, 8, 3.2);
+      if (hasDeb) block(5, ry, 'Zahlbar durch', debL, 6, 8, 3.2);
+      else { H(6, true); doc.text('Zahlbar durch (Name/Adresse)', 5, ry); corners(5, ry + 1.5, 52, 20); }
+      H(6, true); doc.text('Währung', 5, y0 + 70.5); doc.text('Betrag', 18, y0 + 70.5);
+      H(8, false); doc.text('CHF', 5, y0 + 74.2); doc.text(amountText(amount), 18, y0 + 74.2);
+      H(6, true); doc.text('Annahmestelle', 57, y0 + 84.5, { align: 'right' });
+      // Zahlteil (rechts, 148 mm): Titel, QR-Code 46 mm mit Schweizerkreuz, Betrag, Angaben
+      H(11, true); doc.text('Zahlteil', 67, y0 + 8);
+      qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+      var qr = qrcode(0, 'M'); qr.addData(data, 'Byte'); qr.make();
+      var n = qr.getModuleCount(), ms = 46 / n, qx = 67, qy = y0 + 17;
+      doc.setFillColor(0, 0, 0);
+      for (var r = 0; r < n; r++) {
+        for (var cc = 0; cc < n; cc++) {
+          if (!qr.isDark(r, cc)) continue;
+          var run = 1; while (cc + run < n && qr.isDark(r, cc + run)) run++;   // dunkle Module einer Zeile zusammenfassen
+          doc.rect(qx + cc * ms, qy + r * ms, run * ms + 0.01, ms + 0.01, 'F'); cc += run - 1;
+        }
+      }
+      var kx = qx + 23, ky = qy + 23;   // Schweizerkreuz 7 mm in der Mitte
+      doc.setFillColor(255, 255, 255); doc.rect(kx - 3.5, ky - 3.5, 7, 7, 'F');
+      doc.setFillColor(0, 0, 0); doc.rect(kx - 3.1, ky - 3.1, 6.2, 6.2, 'F');
+      doc.setFillColor(255, 255, 255); doc.rect(kx - 0.58, ky - 1.94, 1.16, 3.88, 'F'); doc.rect(kx - 1.94, ky - 0.58, 3.88, 1.16, 'F');
+      H(8, true); doc.text('Währung', 67, y0 + 71); doc.text('Betrag', 81, y0 + 71);
+      H(10, false); doc.text('CHF', 67, y0 + 75.5); doc.text(amountText(amount), 81, y0 + 75.5);
+      var py = block(118, y0 + 8, 'Konto / Zahlbar an', cred, 8, 10, 3.9);
+      py = block(118, py, 'Referenz', [group4(ref)], 8, 10, 3.9);
+      py = block(118, py, 'Zusätzliche Informationen', [msg], 8, 10, 3.9);
+      if (hasDeb) block(118, py, 'Zahlbar durch', debL, 8, 10, 3.9);
+      else { H(8, true); doc.text('Zahlbar durch (Name/Adresse)', 118, py); corners(118, py + 1.5, 65, 25); }
+      return doc.getNumberOfPages();   // Seite mit dem Zahlteil (dort keine Fusszeile)
+    }
 
     // Briefkopf: Logo links, rechts die Firmenangaben schlicht in Grau, bündig untereinander,
     // Adresse und Kontakt mit kleinem Abstand getrennt
@@ -1000,7 +1117,9 @@ textarea.in { min-height: 64px; resize: vertical; }
 
     // Rechts nur bei der Offerte: Datum und Gültigkeit. Beim Kaufvertrag steht das Datum
     // im Einleitungssatz und bei der Unterschrift. Die Nummer steht im Titel.
-    var info = (isK || isB) ? [] : [['Datum', o.dateText], ['Angebot gültig bis', o.validUntil]];
+    // Rechnung und Mahnung: Datum und Zahlungsfrist
+    var info = isR ? [['Rechnungsdatum', o.dateText], ['Zahlbar bis', o.dueDate]] : isM ? [['Datum', o.dateText], ['Zahlbar bis', o.dueDate]]
+      : (isK || isB) ? [] : [['Datum', o.dateText], ['Angebot gültig bis', o.validUntil]];
     info.forEach(function (row, i) {
       txt(GREY, F, 'normal', FZ); doc.text(row[0], 132, 54 + i * LH);
       txt(INK, F, 'normal', FZ); doc.text(row[1], R, 54 + i * LH, { align: 'right' });
@@ -1009,8 +1128,10 @@ textarea.in { min-height: 64px; resize: vertical; }
     // Titel, Einleitungssatz, eine Leerzeile, dann die Tabelle
     var y = 86;
     txt(NAVY, F, 'bold', 15);
-    doc.text((isK ? 'Kaufvertrag / Auftragsbestätigung ' : isB ? 'Auftragsbestätigung ' : 'Offerte ') + o.orderNo, L, y);
-    var introText = isK ? 'Bestellte Insektenschutz-Elemente nach Mass gemäss Aufmass vom ' + o.dateText + ':'
+    doc.text((isM ? o.stufe + '. Mahnung zur Rechnung ' : isR ? 'Rechnung ' : isK ? 'Kaufvertrag / Auftragsbestätigung ' : isB ? 'Auftragsbestätigung ' : 'Offerte ') + o.orderNo, L, y);
+    if (isM) return finishPdf(mahnung());
+    var introText = isR ? 'Für die Montage vom ' + o.montageDate + ' stellen wir Ihnen folgende Elemente in Rechnung:'
+      : isK ? 'Bestellte Insektenschutz-Elemente nach Mass gemäss Aufmass vom ' + o.dateText + ':'
       : isB ? 'Vielen Dank für Ihren Auftrag vom ' + o.dateText + '. Wir bestätigen Ihnen folgende Insektenschutz-Elemente nach Mass gemäss unserer Offerte vom ' + o.offerDate + ':'
       : 'Gerne offerieren wir Ihnen folgende Insektenschutz-Elemente nach Mass gemäss Aufmass vom ' + o.dateText + ':';
     var tableTop = lines(wrap(introText), L, y + 7) + 8;       // letzte Zeile + eine Leerzeile
@@ -1036,6 +1157,11 @@ textarea.in { min-height: 64px; resize: vertical; }
     if (y > 250) { doc.addPage(); y = 30; }
     txt(NAVY, F, 'bold', FZ);
     doc.text('Gesamtbetrag CHF ' + fmt2.format(o.totals.total), R, y, { align: 'right' });
+    if (isR) {
+      // Rechnung: Zahlteil unten auf dieser Seite, wenn genug Platz ist, sonst allein auf einer neuen Seite
+      if (y > QR_TOP - 6) doc.addPage();
+      return finishPdf(qrBill(o.pay, o.totals.total, c, 'Rechnung ' + o.orderNo, o.orderNo));
+    }
 
     // Bedingungen in zwei Spalten, direkt unter dem Gesamtbetrag (freigegeben 14.11.2026).
     // Je Punkt: Titel fett auf eigener Zeile, Text darunter; ein Punkt wird nie getrennt.
@@ -1152,19 +1278,58 @@ textarea.in { min-height: 64px; resize: vertical; }
       ay = ae + LH + GAP;
     });
 
-    // Fusszeile auf jeder Seite
-    function joinNonEmpty(arr) { return arr.filter(function (x) { return trimmed(x); }).join(', '); }
-    var foot1 = joinNonEmpty([fi.firma, fi.strasse, fi.plzOrt]);
-    var foot2 = joinNonEmpty([fi.telefon ? 'Tel. ' + fi.telefon : '', fi.email, fi.web, fi.uid ? 'UID ' + fi.uid : '']);
-    var pages = doc.getNumberOfPages();
-    for (var i = 1; i <= pages; i++) {
-      doc.setPage(i);
-      doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(0.2); doc.line(L, 279, R, 279);
-      txt(GREY, F, 'normal', 7.5);
-      doc.text(foot1, L, 283.5); doc.text(foot2, L, 287.3);
-      doc.text('Seite ' + i + ' / ' + pages, R, 287.3, { align: 'right' });
+    return finishPdf(0);
+
+    // Fusszeile auf jeder Seite, ausser auf der Seite mit dem QR-Zahlteil (skipPage); gibt das PDF zurück
+    function finishPdf(skipPage) {
+      function joinNonEmpty(arr) { return arr.filter(function (x) { return trimmed(x); }).join(', '); }
+      var foot1 = joinNonEmpty([fi.firma, fi.strasse, fi.plzOrt]);
+      var foot2 = joinNonEmpty([fi.telefon ? 'Tel. ' + fi.telefon : '', fi.email, fi.web, fi.uid ? 'UID ' + fi.uid : '']);
+      var pages = doc.getNumberOfPages();
+      for (var i = 1; i <= pages; i++) {
+        if (i === skipPage) continue;
+        doc.setPage(i);
+        doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(0.2); doc.line(L, 279, R, 279);
+        txt(GREY, F, 'normal', 7.5);
+        doc.text(foot1, L, 283.5); doc.text(foot2, L, 287.3);
+        doc.text('Seite ' + i + ' / ' + pages, R, 287.3, { align: 'right' });
+      }
+      return doc.output('blob');
     }
-    return doc.output('blob');
+
+    // Mahnung (Stufe 1–3): zwei Absätze, kleine Betragstabelle, Gruss, QR-Zahlteil mit dem offenen Betrag.
+    // Gebühren gemäss AGB Ziffer 10: 1. Mahnung kostenlos, 2. und 3. je MAHN_GEB. Alles passt auf eine Seite.
+    function mahnung() {
+      var s = o.stufe, nr = o.orderNo, geb = 'CHF ' + fmt2.format(MAHN_GEB);
+      var zahl = 'Bitte bezahlen Sie den offenen Betrag bis ' + o.dueDate + ' mit dem Zahlteil unten.';
+      var schon = 'Haben Sie bereits bezahlt, betrachten Sie dieses Schreiben bitte als gegenstandslos.';
+      var paras = s === 1 ? ['Unsere Rechnung ' + nr + ' vom ' + o.invoiceDate + ' war am ' + o.invoiceDue + ' fällig. Bis heute haben wir keine Zahlung erhalten.', zahl + ' ' + schon]
+        : s === 2 ? ['Trotz unserer 1. Mahnung' + (o.lastReminder ? ' vom ' + o.lastReminder : '') + ' ist die Rechnung ' + nr + ' vom ' + o.invoiceDate + ' noch offen. Gemäss unseren AGB kostet die 2. Mahnung ' + geb + '.', zahl + ' ' + schon]
+        : ['Trotz unserer bisherigen Mahnungen ist die Rechnung ' + nr + ' vom ' + o.invoiceDate + ' noch offen. Gemäss unseren AGB kostet die 3. Mahnung weitere ' + geb + '.',
+          'Dies ist unsere letzte Mahnung. ' + zahl + ' Andernfalls leiten wir die Betreibung ein.'];
+      var e = y + 7 - LH - GAP;   // erster Absatz auf gleicher Höhe wie der Einleitungssatz der anderen Dokumente
+      paras.forEach(function (p) { e = lines(wrap(p), L, e + LH + GAP); });
+      var rows = [['Rechnung ' + nr + ' vom ' + o.invoiceDate, fmt2.format(o.totals.total)]];
+      if (s >= 2) rows.push(['Mahngebühr 2. Mahnung', fmt2.format(MAHN_GEB)]);
+      if (s >= 3) rows.push(['Mahngebühr 3. Mahnung', fmt2.format(MAHN_GEB)]);
+      var open = dunTotal(o.totals.total, s);
+      doc.autoTable({
+        startY: e + 8, margin: { left: L, right: 210 - R },
+        head: [['Position', { content: 'Betrag CHF', styles: { halign: 'right' } }]], body: rows,
+        foot: [['Offener Betrag', { content: fmt2.format(open), styles: { halign: 'right' } }]],
+        styles: { font: F, fontStyle: 'normal', fontSize: 9, cellPadding: 2.2, valign: 'top', textColor: INK, lineColor: LINE, lineWidth: 0.1 },
+        headStyles: { fillColor: NAVY, textColor: 255, font: F, fontStyle: 'bold' },
+        footStyles: { fillColor: [232, 235, 243], textColor: NAVY, font: F, fontStyle: 'bold' },
+        columnStyles: { 1: { halign: 'right', cellWidth: 24 } }
+      });
+      // Gruss; die eigene Unterschrift ist normal bis 16 mm hoch, über dem Zahlteil wenn nötig kleiner (mindestens 10 mm)
+      var gy = doc.lastAutoTable.finalY + LH + SEC, ny = gy + LH + GAP, sigMax = Math.min(16, QR_TOP - 6 - gy - 2.5 - LH);
+      txt(INK, F, 'normal', FZ); doc.text('Freundliche Grüsse', L, gy);
+      if (ownSig) { var os = fitImg(ownSig, 45, sigMax >= 10 ? sigMax : 16); doc.addImage(ownSig, 'PNG', L, gy + 2.5, os.w, os.h, 'ownsig', 'FAST'); ny = gy + 2.5 + os.h + LH; }
+      txt(NAVY, FS, semi, FZ); doc.text(fi.firma, L, ny);
+      if (ny > QR_TOP - 6 + 0.01) doc.addPage();
+      return qrBill(o.pay, open, c, 'Rechnung ' + nr + ', ' + s + '. Mahnung', nr);
+    }
   }
 
   // ================= Abschluss & Speichern =================
@@ -1238,7 +1403,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       ['7. Abnahme und Mängel', 'Bitte prüfen Sie die Elemente bei der Montage und melden Sie sichtbare Mängel sofort, später entdeckte innert 30 Tagen nach der Entdeckung. Wir beheben Mängel durch Reparatur oder Ersatz. Gelingt das nicht, gelten Ihre gesetzlichen Rechte. Ansprüche wegen Mängeln verjähren 2 Jahre nach der Montage.'],
       ['8. Garantie', 'Zusätzlich erhalten Sie ' + garantieText() + ' Garantie ab Montage. Ist ein Element in dieser Zeit defekt, ersetzen wir es kostenlos, inklusive Lieferung und Montage. Ausgenommen sind Schäden durch Gewalt, Tiere, Unwetter oder falsche Bedienung. Melden Sie einen Garantiefall bitte mit einem Foto an ' + mail + ' oder ' + fi.telefon + '.'],
       ['9. Haftung', 'Für Schäden, die wir bei Lieferung oder Montage verschulden, haften wir nach Gesetz. Für indirekte Schäden und Folgeschäden haften wir nur bei Absicht oder grober Fahrlässigkeit.'],
-      ['10. Zahlung', 'Die Rechnung erhalten Sie nach der Montage, zahlbar innert ' + frist + ' Tagen. Bei Zahlungsverzug schulden Sie 5 % Verzugszins pro Jahr. Die 1. Mahnung ist kostenlos, die 2. und 3. Mahnung kosten je CHF 20.'],
+      ['10. Zahlung', 'Die Rechnung erhalten Sie nach der Montage, zahlbar innert ' + frist + ' Tagen. Bei Zahlungsverzug schulden Sie 5 % Verzugszins pro Jahr. Die 1. Mahnung ist kostenlos, die 2. und 3. Mahnung kosten je CHF ' + MAHN_GEB + '.'],
       ['11. Vertraulichkeit', 'Alle Angaben über Sie und Ihre Wohnung behandeln wir vertraulich, auch nach dem Auftrag. Fotos, zum Beispiel für das Aufmass oder einen Garantiefall, verwenden wir nur für Ihren Auftrag. Für Werbung nur mit Ihrem Einverständnis.'],
       ['12. Datenschutz', 'Verantwortlich ist ' + wer + '. Wir bearbeiten Ihre Angaben (Name, Adresse, Telefon, E-Mail, Auftrags- und Produktdaten, Unterschrift, Fotos) für Offerte, Vertrag, Bestellung, Montage, Rechnung, Garantie und die gesetzliche Aufbewahrung. Wir speichern sie bei Microsoft 365, das sie in unserem Auftrag bearbeitet. Nachrichten senden wir per WhatsApp oder E-Mail. Microsoft und WhatsApp können Daten auch in der EU und in den USA bearbeiten. Beide sind nach dem Datenschutzrahmen Schweiz–USA zertifiziert, den der Bundesrat als angemessen anerkennt. Weiteren Dritten geben wir Ihre Daten nur weiter, wenn es für den Auftrag nötig ist. Vertrags- und Buchhaltungsunterlagen bewahren wir 10 Jahre auf (Art. 958f OR). Auskunft, Berichtigung oder Löschung, soweit keine Aufbewahrungspflicht besteht, erhalten Sie unter ' + mail + '.'],
       ['13. Schlussbestimmungen', 'Es gilt Schweizer Recht. Ist eine Bestimmung ungültig, gelten die übrigen weiter. An ihre Stelle tritt die gesetzliche Regelung.']
@@ -1454,8 +1619,8 @@ textarea.in { min-height: 64px; resize: vertical; }
     else if (/^[1-9]\d{8}$/.test(t)) t = '41' + t;
     return /^\d{9,15}$/.test(t) ? t : '';
   }
-  var DOC_NAMES = { offerte: 'Offerte', direkt: 'Kaufvertrag', bestaetigung: 'Auftragsbestätigung' };
-  var DOC_WA = { offerte: 'Ihre Offerte', direkt: 'Ihren Kaufvertrag', bestaetigung: 'Ihre Auftragsbestätigung' };
+  var DOC_NAMES = { offerte: 'Offerte', direkt: 'Kaufvertrag', bestaetigung: 'Auftragsbestätigung', rechnung: 'Rechnung', mahnung: 'Mahnung' };
+  var DOC_WA = { offerte: 'Ihre Offerte', direkt: 'Ihren Kaufvertrag', bestaetigung: 'Ihre Auftragsbestätigung', rechnung: 'Ihre Rechnung', mahnung: 'unsere Mahnung' };
   function finished(r) {
     state = emptyState(); touched = {}; renderAll(true); window.scrollTo(0, 0);
     ord.loaded = false;   // Auftragsliste beim nächsten Öffnen neu laden
@@ -1487,7 +1652,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       '<h3>' + esc(r.title || ('Gespeichert: ' + r.orderNo)) + '</h3>' +
       (r.already ? '<p>Dieser Auftrag war bereits gespeichert. Es wurde nichts doppelt angelegt.</p>' :
         '<div class="doc"><span><b>' + esc(r.name || 'Ohne Namen') + '</b></span><span>' + doc + (r.totals ? ' · ' + r.totals.count + ' Produkte · ' + fmt2.format(r.totals.area) + ' m²' : '') + '</span>' +
-        (r.totals ? '<span>Total CHF ' + fmt2.format(r.totals.total) + '</span>' : '') + '</div>' +
+        (r.totals ? '<span>Total CHF ' + fmt2.format(r.totals.total) + '</span>' : r.open != null ? '<span>Offener Betrag CHF ' + fmt2.format(r.open) + '</span>' : '') + '</div>' +
         '<p>' + esc(r.note || 'Das PDF liegt in OneDrive, der Auftrag steht im Büro-Excel. Die Eingabe ist für den nächsten Kunden geleert.') + '</p>') +
       '<div class="acts">' +
       (waHref ? '<a class="btn primary" href="' + esc(waHref) + '" data-act="waDone">① WhatsApp an ' + esc(r.phone) + '</a>' : '') +
@@ -1717,20 +1882,23 @@ textarea.in { min-height: 64px; resize: vertical; }
         { f: 'Eingetroffen am', l: 'Ware eingetroffen', b: 'Eingetroffen' },
         { f: 'Montage geplant', l: 'Montagetermin', b: 'Termin wählen', pick: true, time: true },
         { f: 'Montiert am', l: 'Montiert', b: 'Montiert' },
-        { f: 'Rechnungsdatum', l: 'Rechnung', none: true },
-        { f: 'Bezahlt am', l: 'Bezahlt', b: 'Bezahlt', needs: 'Rechnungsdatum' }
+        { f: 'Rechnungsdatum', l: 'Rechnung', b: 'Rechnung erstellen', act: 'invoice', needs: 'Montiert am', needsTxt: 'nach der Montage' },
+        { f: 'Bezahlt am', l: 'Bezahlt', b: 'Bezahlt', needs: 'Rechnungsdatum', needsTxt: 'nach der Rechnung' }
       ];
+      // Mahnung fällig laut Excel-Formel «Nächster Schritt» (Zahlungsfrist bzw. Abstand zur letzten Mahnung vorbei)
+      var dun = (hasVal(ov(r, 'Rechnungsdatum')) && !hasVal(ov(r, 'Bezahlt am'))) ? /^([123])\. Mahnung senden/.exec(trimmed(s)) : null;
       var nextF = null; F.forEach(function (x) { if (!nextF && !hasVal(ov(r, x.f))) nextF = x.f; });
       F.forEach(function (x) {
-        var v = ov(r, x.f), isNext = nextF === x.f;
+        var v = ov(r, x.f), isNext = nextF === x.f && !(dun && x.f === 'Bezahlt am');
         if (hasVal(v)) steps += stepRow(true, false, x.l, x.time ? serialDT(v) : serialText(v), '<button class="chg" data-ordact="edit" data-f="' + esc(x.f) + '" data-label="' + esc(x.l) + '"' + (x.time ? ' data-time="1"' : '') + '>ändern</button>');
-        else if (x.none) steps += stepRow(false, isNext, x.l, 'Rechnung als PDF folgt in der nächsten App-Version', '');
-        else if (x.needs && !hasVal(ov(r, x.needs))) steps += stepRow(false, false, x.l, 'nach der Rechnung', '');
-        else steps += stepRow(false, isNext, x.l, '', '<button class="btn' + (isNext ? ' primary' : '') + '" data-ordact="' + (x.pick ? 'date' : 'set') + '" data-f="' + esc(x.f) + '" data-label="' + esc(x.l) + '"' + (x.time ? ' data-time="1"' : '') + '>' + esc(x.b) + '</button>');
+        else if (x.needs && !hasVal(ov(r, x.needs))) steps += stepRow(false, false, x.l, x.needsTxt, '');
+        else steps += stepRow(false, isNext, x.l, '', '<button class="btn' + (isNext ? ' primary' : '') + '" data-ordact="' + (x.act || (x.pick ? 'date' : 'set')) + '" data-f="' + esc(x.f) + '" data-label="' + esc(x.l) + '"' + (x.time ? ' data-time="1"' : '') + '>' + esc(x.b) + '</button>');
       });
       if (hasVal(ov(r, 'Rechnungsdatum')) && !hasVal(ov(r, 'Bezahlt am'))) {
-        var ms = Number(ov(r, 'Mahnstufe')) || 0;
-        steps += stepRow(ms > 0, false, 'Mahnungen', ms ? ms + '. Mahnung am ' + serialText(ov(r, 'Letzte Mahnung')) : 'Noch keine. Mahnungen als PDF folgen in der nächsten App-Version', '');
+        var ms = Number(ov(r, 'Mahnstufe')) || 0, mSub = ms ? ms + '. Mahnung am ' + serialText(ov(r, 'Letzte Mahnung')) : 'Noch keine';
+        if (dun) steps += stepRow(ms > 0, true, 'Mahnungen', mSub, '<button class="btn primary" data-ordact="dun" data-s="' + dun[1] + '">' + dun[1] + '. Mahnung erstellen</button>');
+        else if (ms >= 3) steps += stepRow(true, false, 'Mahnungen', mSub + ', Betreibung prüfen', '');
+        else steps += stepRow(ms > 0, false, 'Mahnungen', ms ? mSub : 'Noch keine, Rechnung fällig am ' + serialText(ov(r, 'Fällig am')), '');
       }
     }
     // Offene Garantiefälle direkt unter dem Kopf: das ist dann die aktuelle Arbeit
@@ -1992,36 +2160,115 @@ textarea.in { min-height: 64px; resize: vertical; }
     busy = true;
     dialog('<h3>Auftragsbestätigung …</h3><p>Wird erstellt und gespeichert.</p>');
     try {
-      var now = new Date();
-      var pos = ord.pos.filter(function (p) { return trimmed(pv(p, 'Auftragsnr')) === nr; })
-        .sort(function (a, b) { return (Number(pv(a, 'Pos')) || 0) - (Number(pv(b, 'Pos')) || 0); })
-        .map(function (p) {
-          var prod = trimmed(pv(p, 'Produkt'));
-          return { pos: Number(pv(p, 'Pos')) || 0, bereich: trimmed(pv(p, 'Bereich')), bem: trimmed(pv(p, 'Bemerkung')), produkt: prod, beschreibung: beschreibungFor(prod),
-            lauf: trimmed(pv(p, 'Flache Laufschiene')), gewebe: trimmed(pv(p, 'Gewebe')), farbe: trimmed(pv(p, 'Farbe')), art: trimmed(pv(p, 'Art')), breite: Number(pv(p, 'Breite cm')) || 0, hoehe: Number(pv(p, 'Höhe cm')) || 0,
-            tiefe: hasVal(pv(p, 'Tiefe cm')) ? Number(pv(p, 'Tiefe cm')) : null, price: Number(pv(p, 'Preis CHF')) || 0 };
-        });
-      if (!pos.length) throw new Error('Zu diesem Auftrag gibt es im Blatt «Positionen» keine Produkte.');
-      var total = hasVal(ov(r, 'Betrag CHF')) ? Number(ov(r, 'Betrag CHF')) : pos.reduce(function (s, p) { return s + p.price; }, 0);
-      var cust = { vorname: trimmed(ov(r, 'Vorname')), nachname: trimmed(ov(r, 'Nachname')), strasse: trimmed(ov(r, 'Strasse')), plz: trimmed(ov(r, 'PLZ')), ort: trimmed(ov(r, 'Ort')), telefon: trimmed(ov(r, 'Telefon')) };
-      var pdf = await makePdf({ kind: 'bestaetigung', orderNo: nr, dateText: dateCH(now), offerDate: serialText(ov(r, 'Erfasst am')), customer: cust, positions: pos,
-        totals: { total: total, count: pos.length, area: Number(ov(r, 'Fläche m²')) || 0 } });
-      // Ablage im bestehenden Auftragsordner (Name aus dem Ordner-Link)
-      var person = safeName([cust.nachname, cust.vorname].filter(Boolean).join(' ')) || 'Kunde';
-      var folder = '';
-      try { folder = decodeURIComponent(trimmed(ov(r, 'Ordner-Link')).split('/').pop()); } catch (e) { folder = ''; }
-      if (!folder) folder = safeName(nr + ' Offerte ' + person);
-      var fileName = 'Auftragsbestätigung_' + nr + '_' + person.replace(/ /g, '_') + '.pdf';
-      var file = await graph('PUT', '/me/drive/root:/' + encPath(CONFIG.basePath + '/' + CONFIG.ordersFolder + '/' + folder + '/' + fileName) + ':/content', pdf, 'application/pdf');
+      var now = new Date(), d = orderDocData(r, nr);
+      var pdf = await makePdf({ kind: 'bestaetigung', orderNo: nr, dateText: dateCH(now), offerDate: serialText(ov(r, 'Erfasst am')), customer: d.cust, positions: d.pos, totals: d.totals });
+      var fileName = 'Auftragsbestätigung_' + nr + '_' + d.person.replace(/ /g, '_') + '.pdf';
+      var file = await saveOrderPdf(d.folder, fileName, pdf);
       await writeOrderCells(nr, { 'Offertenstatus': 'Angenommen', 'Ablehnungsgrund': '' });
       await loadOrders();
       busy = false;
       lastPdf = { blob: pdf, name: fileName };
-      shareDialog({ kind: 'bestaetigung', orderNo: nr, name: custName(r), phone: cust.telefon, fileUrl: file.webUrl, totals: { total: total, count: pos.length, area: Number(ov(r, 'Fläche m²')) || 0 },
+      shareDialog({ kind: 'bestaetigung', orderNo: nr, name: custName(r), phone: d.cust.telefon, fileUrl: file.webUrl, totals: d.totals,
         title: 'Auftragsbestätigung ' + nr, note: 'Die Offerte ist im Büro-Excel als angenommen eingetragen. Das PDF liegt im Auftragsordner in OneDrive.' });
     } catch (e) {
       busy = false;
       dialog('<h3>Nicht gespeichert</h3><div class="err-box">' + esc((e && e.message) || String(e)) + '</div><p>Es wurde nichts als angenommen eingetragen. Du kannst es nochmals versuchen.</p><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
+    }
+  }
+
+  // Daten eines Auftrags für Dokumente aus dem Reiter «Aufträge»: Produkte, Kunde, Total und Auftragsordner
+  function orderDocData(r, nr) {
+    var pos = ord.pos.filter(function (p) { return trimmed(pv(p, 'Auftragsnr')) === nr; })
+      .sort(function (a, b) { return (Number(pv(a, 'Pos')) || 0) - (Number(pv(b, 'Pos')) || 0); })
+      .map(function (p) {
+        var prod = trimmed(pv(p, 'Produkt'));
+        return { pos: Number(pv(p, 'Pos')) || 0, bereich: trimmed(pv(p, 'Bereich')), bem: trimmed(pv(p, 'Bemerkung')), produkt: prod, beschreibung: beschreibungFor(prod),
+          lauf: trimmed(pv(p, 'Flache Laufschiene')), gewebe: trimmed(pv(p, 'Gewebe')), farbe: trimmed(pv(p, 'Farbe')), art: trimmed(pv(p, 'Art')), breite: Number(pv(p, 'Breite cm')) || 0, hoehe: Number(pv(p, 'Höhe cm')) || 0,
+          tiefe: hasVal(pv(p, 'Tiefe cm')) ? Number(pv(p, 'Tiefe cm')) : null, price: Number(pv(p, 'Preis CHF')) || 0 };
+      });
+    if (!pos.length) throw new Error('Zu diesem Auftrag gibt es im Blatt «Positionen» keine Produkte.');
+    var total = hasVal(ov(r, 'Betrag CHF')) ? Number(ov(r, 'Betrag CHF')) : pos.reduce(function (s, p) { return s + p.price; }, 0);
+    var cust = { vorname: trimmed(ov(r, 'Vorname')), nachname: trimmed(ov(r, 'Nachname')), strasse: trimmed(ov(r, 'Strasse')), plz: trimmed(ov(r, 'PLZ')), ort: trimmed(ov(r, 'Ort')), telefon: trimmed(ov(r, 'Telefon')) };
+    // Ablage im bestehenden Auftragsordner (Name aus dem Ordner-Link)
+    var person = safeName([cust.nachname, cust.vorname].filter(Boolean).join(' ')) || 'Kunde';
+    var folder = '';
+    try { folder = decodeURIComponent(trimmed(ov(r, 'Ordner-Link')).split('/').pop()); } catch (e) { folder = ''; }
+    if (!folder) folder = safeName(nr + ' Offerte ' + person);
+    return { pos: pos, cust: cust, person: person, folder: folder, totals: { total: total, count: pos.length, area: Number(ov(r, 'Fläche m²')) || 0 } };
+  }
+  function saveOrderPdf(folder, fileName, pdf) {
+    return graph('PUT', '/me/drive/root:/' + encPath(CONFIG.basePath + '/' + CONFIG.ordersFolder + '/' + folder + '/' + fileName) + ':/content', pdf, 'application/pdf');
+  }
+  function payErrorDialog(msg) {
+    dialog('<h3>Bankangaben fehlen</h3><div class="err-box">' + esc(msg) + '</div><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
+  }
+
+  // Rechnung: PDF mit QR-Zahlteil in den Auftragsordner, Rechnungsdatum ins Büro-Excel («Fällig am» rechnet Excel)
+  function invoiceDialog(nr) {
+    var r = findOrder(nr); if (!r || busy) return;
+    var pay = payInfo(); if (pay.err) { payErrorDialog(pay.err); return; }
+    var due = dateCH(addDays(new Date(), firma().zahlungsfrist || 30));
+    dialog('<h3>Rechnung erstellen?</h3><div class="doc"><span><b>' + esc(custName(r) || 'Ohne Namen') + '</b></span><span>Rechnung ' + esc(nr) + ', CHF ' + fmt2.format(Number(ov(r, 'Betrag CHF')) || 0) + '</span><span>Zahlbar bis ' + due + '</span></div>' +
+      '<p>Die App legt die Rechnung mit QR-Zahlteil als PDF in den Auftragsordner und trägt das Rechnungsdatum ins Büro-Excel ein.</p>' +
+      '<div class="acts"><button class="btn primary" data-act="invGo">Ja, Rechnung erstellen</button><button class="btn" data-act="close">Abbrechen</button></div>');
+    dialogActions.invGo = function () { createInvoice(nr, pay); };
+  }
+  async function createInvoice(nr, pay) {
+    var r = findOrder(nr); if (!r || busy) return;
+    busy = true;
+    dialog('<h3>Rechnung …</h3><p>Wird erstellt und gespeichert.</p>');
+    try {
+      var now = new Date(), d = orderDocData(r, nr);
+      var pdf = await makePdf({ kind: 'rechnung', orderNo: nr, dateText: dateCH(now), dueDate: dateCH(addDays(now, firma().zahlungsfrist || 30)),
+        montageDate: serialText(ov(r, 'Montiert am')), customer: d.cust, positions: d.pos, totals: d.totals, pay: pay });
+      var fileName = 'Rechnung_' + nr + '_' + d.person.replace(/ /g, '_') + '.pdf';
+      var file = await saveOrderPdf(d.folder, fileName, pdf);
+      await writeOrderCells(nr, { 'Rechnungsdatum': excelDate(now) });
+      await loadOrders();
+      busy = false;
+      lastPdf = { blob: pdf, name: fileName };
+      shareDialog({ kind: 'rechnung', orderNo: nr, name: custName(r), phone: d.cust.telefon, fileUrl: file.webUrl, totals: d.totals,
+        title: 'Rechnung ' + nr, note: 'Das Rechnungsdatum steht im Büro-Excel. Das PDF liegt im Auftragsordner in OneDrive.' });
+    } catch (e) {
+      busy = false;
+      if (e && e.errorCode === 'interaction_in_progress') return;
+      dialog('<h3>Nicht gespeichert</h3><div class="err-box">' + esc((e && e.message) || String(e)) + '</div><p>Es wurde kein Rechnungsdatum eingetragen. Du kannst es nochmals versuchen.</p><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
+    }
+  }
+
+  // Mahnung (Stufe 1–3): PDF mit QR-Zahlteil (offener Betrag inkl. Gebühren), Mahnstufe und Datum ins Büro-Excel
+  function dunDialog(nr, stufe) {
+    var r = findOrder(nr); if (!r || busy || !(stufe >= 1 && stufe <= 3)) return;
+    var pay = payInfo(); if (pay.err) { payErrorDialog(pay.err); return; }
+    var open = dunTotal(ov(r, 'Betrag CHF'), stufe);
+    dialog('<h3>' + stufe + '. Mahnung erstellen?</h3><div class="doc"><span><b>' + esc(custName(r) || 'Ohne Namen') + '</b></span><span>Rechnung ' + esc(nr) + ' vom ' + serialText(ov(r, 'Rechnungsdatum')) + '</span>' +
+      '<span>Offener Betrag CHF ' + fmt2.format(open) + (stufe >= 2 ? ', inkl. Mahngebühr' : '') + '</span></div>' +
+      '<p>Die App legt die Mahnung mit QR-Zahlteil als PDF in den Auftragsordner und trägt Mahnstufe und Datum ins Büro-Excel ein.</p>' +
+      '<div class="acts"><button class="btn primary" data-act="dunGo">Ja, ' + stufe + '. Mahnung erstellen</button><button class="btn" data-act="close">Abbrechen</button></div>');
+    dialogActions.dunGo = function () { createDunning(nr, stufe, pay); };
+  }
+  async function createDunning(nr, stufe, pay) {
+    var r = findOrder(nr); if (!r || busy) return;
+    busy = true;
+    dialog('<h3>' + stufe + '. Mahnung …</h3><p>Wird erstellt und gespeichert.</p>');
+    try {
+      var now = new Date(), d = orderDocData(r, nr), fi = firma();
+      var inv = ov(r, 'Rechnungsdatum'), due = ov(r, 'Fällig am');
+      var dueTxt = hasVal(due) ? serialText(due) : dateCH(addDays(fromSerial(inv), fi.zahlungsfrist || 30));
+      var pdf = await makePdf({ kind: 'mahnung', stufe: stufe, orderNo: nr, dateText: dateCH(now), dueDate: dateCH(addDays(now, fi.mahnAbstand || 10)),
+        invoiceDate: serialText(inv), invoiceDue: dueTxt, lastReminder: serialText(ov(r, 'Letzte Mahnung')), customer: d.cust, totals: d.totals, pay: pay });
+      var fileName = 'Mahnung_' + stufe + '_' + nr + '_' + d.person.replace(/ /g, '_') + '.pdf';
+      var file = await saveOrderPdf(d.folder, fileName, pdf);
+      await writeOrderCells(nr, { 'Mahnstufe': stufe, 'Letzte Mahnung': excelDate(now) });
+      await loadOrders();
+      busy = false;
+      lastPdf = { blob: pdf, name: fileName };
+      shareDialog({ kind: 'mahnung', orderNo: nr, name: custName(r), phone: d.cust.telefon, fileUrl: file.webUrl, open: dunTotal(d.totals.total, stufe),
+        title: stufe + '. Mahnung ' + nr, note: 'Mahnstufe und Datum stehen im Büro-Excel. Das PDF liegt im Auftragsordner in OneDrive.' });
+    } catch (e) {
+      busy = false;
+      if (e && e.errorCode === 'interaction_in_progress') return;
+      dialog('<h3>Nicht gespeichert</h3><div class="err-box">' + esc((e && e.message) || String(e)) + '</div><p>Es wurde keine Mahnung eingetragen. Du kannst es nochmals versuchen.</p><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
     }
   }
 
@@ -2218,6 +2465,8 @@ textarea.in { min-height: 64px; resize: vertical; }
     else if (act === 'reject') rejectDialog(nr, false);
     else if (act === 'offerEdit') rejectDialog(nr, true);
     else if (act === 'cost') costDialog(nr);
+    else if (act === 'invoice') invoiceDialog(nr);
+    else if (act === 'dun') dunDialog(nr, Number(b.dataset.s));
     else if (act === 'gFold') { ord.gOpen = !ord.gOpen; renderDetail(); }
     else if (act === 'prodFold') { try { localStorage.setItem(DET_PROD_KEY, detProdOpen() ? '0' : '1'); } catch (e) {} renderDetail(); }
   });
