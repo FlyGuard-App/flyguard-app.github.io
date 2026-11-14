@@ -464,7 +464,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       tuer: makeGrid(range(80, 200), range(200, 260), function (w, h) { return 500 + 37.5 * (w - 90) / 10 + 15 * (h - 210) / 10; })
     }
   };
-  var APP_VERSION = '14.11.2026 · 7w';
+  var APP_VERSION = '14.11.2026 · 7x';
   var KEY_STATE = 'flyguard-erfassung-v1', KEY_MASTER = 'flyguard-stammdaten-v2';
   // «lauf» (flache Laufschiene: 'Ja' / 'Nein' / '') hat kein Eingabefeld, sondern den Ja/Nein-Schalter
   // Tiefe wird seit 7h nicht mehr erfasst (alte Aufträge behalten ihre Tiefe im Excel)
@@ -1039,9 +1039,9 @@ textarea.in { min-height: 64px; resize: vertical; }
 
     // Bedingungen in zwei Spalten, direkt unter dem Gesamtbetrag (freigegeben 14.11.2026).
     // Je Punkt: Titel fett auf eigener Zeile, Text darunter; ein Punkt wird nie getrennt.
-    // Passt alles samt Abschluss (Unterschriften bzw. Gruss) auf die Seite, werden die Spalten gleich hoch verteilt.
-    // Sonst geht es fliessend weiter (Spalte 1, Spalte 2, nächste Seite). Der Abschluss folgt direkt nach dem
-    // letzten Punkt und steht nie allein: mindestens ein Punkt kommt mit auf seine Seite.
+    // Die Spalten werden immer gleich hoch verteilt. Passt alles samt Abschluss (Unterschriften bzw. Gruss) auf die
+    // Seite, bleibt alles zusammen. Sonst kommen so viele Punkte wie möglich auf diese Seite und der Rest auf die
+    // nächste. Der Abschluss folgt direkt nach dem letzten Punkt und steht nie allein: mindestens ein Punkt kommt mit.
     var CW2 = (R - L - 8) / 2, BOT = 273;   // Spaltenbreite; tiefste Grundlinie über der Fusszeile
     function prepCols(list) { return list.map(function (t) { txt(INK, F, 'bold', FZ); var th = doc.splitTextToSize(t[0], CW2); return { th: th, tb: wrap(t[1], CW2) }; }); }
     function termH(t) { return (t.th.length + t.tb.length - 1) * LH; }
@@ -1056,12 +1056,10 @@ textarea.in { min-height: 64px; resize: vertical; }
       while (rest.length) {
         var bal = balanceCols(rest);
         if (y0 + bal.h + tailNeed <= BOT) { pages.push({ y: y0, cols: [bal.a, bal.b], end: y0 + bal.h }); break; }
-        var cols = [[], []], ci = 0, cy = y0;
-        while (rest.length > 1 && ci < 2) {
-          var st = cols[ci].length ? cy + LH + GAP : y0;
-          if (st + termH(rest[0]) <= BOT) { cy = st + termH(rest[0]); cols[ci].push(rest.shift()); } else { ci++; }
-        }
-        pages.push({ y: y0, cols: cols, end: null });
+        var k = rest.length - 1, part = null;
+        while (k > 0) { part = balanceCols(rest.slice(0, k)); if (y0 + part.h <= BOT) break; k--; }
+        if (k > 0) { pages.push({ y: y0, cols: [part.a, part.b], end: null }); rest = rest.slice(k); }
+        else pages.push({ y: y0, cols: [[], []], end: null });
         y0 = 30;
       }
       return pages;
@@ -1089,19 +1087,20 @@ textarea.in { min-height: 64px; resize: vertical; }
       });
       return endY;
     }
-    // Gruss mit eigener Unterschrift (falls hinterlegt) und Firmenname; closingH = Höhe ab der Gruss-Zeile
-    var closingH = ownSig ? 2.5 + 16 + LH : LH + GAP;
+    // Gruss mit eigener Unterschrift (falls hinterlegt) und Firmenname; closingH = Höhe ab der Gruss-Zeile.
+    // Die Unterschrift ist normal bis 16 mm hoch; ist der Platz knapp, wird sie kleiner (mindestens 10 mm, closingMin).
+    var closingH = ownSig ? 2.5 + 16 + LH : LH + GAP, closingMin = ownSig ? 2.5 + 10 + LH : LH + GAP;
     function closing(gy) {
       txt(INK, F, 'normal', FZ); doc.text('Freundliche Grüsse', L, gy);
       var ny = gy + LH + GAP;
-      if (ownSig) { var os = fitImg(ownSig, 45, 16); doc.addImage(ownSig, 'PNG', L, gy + 2.5, os.w, os.h, 'ownsig', 'FAST'); ny = gy + 2.5 + os.h + LH; }
+      if (ownSig) { var os = fitImg(ownSig, 45, Math.min(16, BOT - gy - 2.5 - LH)); doc.addImage(ownSig, 'PNG', L, gy + 2.5, os.w, os.h, 'ownsig', 'FAST'); ny = gy + 2.5 + os.h + LH; }
       txt(NAVY, FS, semi, FZ); doc.text(fi.firma, L, ny);
     }
 
     if (isB) {
       // Auftragsbestätigung: Bedingungen (ohne «Kundenbesuch», der Kunde unterschreibt hier nicht),
       // danach direkt der Gruss
-      closing(drawCols('Bedingungen', function (ref) { return confirmTerms(o.totals.total, ref); }, y + LH + SEC, LH + SEC + closingH) + LH + SEC);
+      closing(drawCols('Bedingungen', function (ref) { return confirmTerms(o.totals.total, ref); }, y + LH + SEC, LH + SEC + closingMin) + LH + SEC);
     } else if (!isK) {
       // Offerte: Gültigkeit, Garantie und Hinweis auf die AGB, dann Beratung und Gruss
       var oy = y + LH + SEC;
@@ -1115,18 +1114,21 @@ textarea.in { min-height: 64px; resize: vertical; }
       var oe = lines(ps[1], L, lines(ps[0], L, oy) + LH + GAP);
       closing(oe + LH + SEC);
     } else {
-      // Kaufvertrag: Unterschriften direkt nach dem letzten Punkt. sy = Unterschriftslinie; darüber bis 22 mm
-      // Platz für die Unterschrift des Kunden, darunter die Beschriftung (zusammen 24 + 4.3 mm)
-      var sy = drawCols('Vertragsbedingungen', function (ref) { return contractTerms(o.totals.total, ref); }, y + LH + SEC, 24 + 4.3) + 24;
+      // Kaufvertrag: Unterschriften direkt nach dem letzten Punkt. sy = Unterschriftslinie, darunter die Beschriftung.
+      // Über der Linie normal bis 22 mm Platz für die Unterschriften; ist es knapp, werden sie kleiner (mindestens
+      // 14 mm), statt mit dem letzten Punkt auf eine neue Seite zu rutschen.
+      var SIG_MAX = 22, SIG_MIN = 14, LBL = 4.3;
+      var endT = drawCols('Vertragsbedingungen', function (ref) { return contractTerms(o.totals.total, ref); }, y + LH + SEC, 2 + SIG_MIN + LBL);
+      var sy = Math.min(endT + 2 + SIG_MAX, BOT - LBL), sigH = sy - endT - 2;
       txt(INK, F, 'normal', FZ);
       doc.text([o.signPlace, o.dateText].filter(Boolean).join(', '), L, sy - 1.5);
       if (o.signature) {
         var ip = doc.getImageProperties(o.signature), sw = 52, sh = sw * ip.height / ip.width;
-        if (sh > 22) { sh = 22; sw = sh * ip.width / ip.height; }
+        if (sh > sigH) { sh = sigH; sw = sh * ip.width / ip.height; }
         doc.addImage(o.signature, 'PNG', L + 58, sy - sh - 0.5, sw, sh, 'sig', 'FAST');
       }
       // FlyGuard-Seite: eigene Unterschrift auf der Linie, sonst der Firmenname
-      if (ownSig) { var os2 = fitImg(ownSig, 50, 18); doc.addImage(ownSig, 'PNG', L + 120, sy - os2.h - 0.5, os2.w, os2.h, 'ownsig', 'FAST'); }
+      if (ownSig) { var os2 = fitImg(ownSig, 50, Math.min(18, sigH)); doc.addImage(ownSig, 'PNG', L + 120, sy - os2.h - 0.5, os2.w, os2.h, 'ownsig', 'FAST'); }
       else { txt(NAVY, FS, semi, FZ); doc.text(fi.firma, L + 120, sy - 1.5); }
       doc.setDrawColor(150, 156, 170); doc.setLineWidth(0.3);
       doc.line(L, sy, L + 50, sy); doc.line(L + 58, sy, L + 112, sy); doc.line(L + 120, sy, R, sy);
