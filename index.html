@@ -467,7 +467,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       tuer: makeGrid(range(80, 200), range(200, 260), function (w, h) { return 500 + 37.5 * (w - 90) / 10 + 15 * (h - 210) / 10; })
     }
   };
-  var APP_VERSION = '14.11.2026 · 7z';
+  var APP_VERSION = '14.11.2026 · 8a';
   var KEY_STATE = 'flyguard-erfassung-v1', KEY_MASTER = 'flyguard-stammdaten-v2';
   // «lauf» (flache Laufschiene: 'Ja' / 'Nein' / '') hat kein Eingabefeld, sondern den Ja/Nein-Schalter
   // Tiefe wird seit 7h nicht mehr erfasst (alte Aufträge behalten ihre Tiefe im Excel)
@@ -943,7 +943,8 @@ textarea.in { min-height: 64px; resize: vertical; }
       } catch (e) { /* Einstellungen fehlen: Standardwerte */ }
       master = { produkte: produkte, farben: farben, gewebe: gewebe, zimmer: zimmer, regeln: regeln, raster: raster, firma: fa, source: 'Excel', loadedAt: new Date().toLocaleString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) };
       store(KEY_MASTER, master); fillSelects(); renderAll(true);
-      if (showResult) dialog('<h3>Aktualisiert</h3><p>Preisraster, ' + produkte.length + ' Produkte, ' + farben.length + ' Farben und ' + zimmer.length + ' Zimmer aus Excel geladen.</p><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
+      if (showResult) dialog('<h3>Aktualisiert</h3><p>Preisraster, ' + prodTxt(produkte.length) + ', ' + farben.length + ' Farben und ' + zimmer.length + ' Zimmer aus Excel geladen.</p>' +
+        '<p class="fine">Gerade im Büro-Excel etwas geändert? Es kann bis zu 5 Minuten dauern, bis es hier ankommt. Dann später nochmals laden.</p><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
     } catch (e) {
       if (showResult) dialog('<h3>Laden nicht möglich</h3><div class="err-box">' + esc(e.message) + '</div><p>Die App verwendet die zuletzt geladenen Werte.</p><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
     }
@@ -1364,7 +1365,7 @@ textarea.in { min-height: 64px; resize: vertical; }
     var t = totals(), doc = kind === 'direkt' ? 'Kaufvertrag' : 'Offerte';
     if (kind === 'direkt') { signDialog(t); return; }
     dialogActions.go = function () { runSave(kind); };
-    dialog('<h3>' + doc + ' erstellen?</h3><div class="doc"><span><b>' + esc([state.customer.vorname, state.customer.nachname].filter(Boolean).join(' ') || 'Ohne Namen') + '</b></span><span>' + t.count + ' Produkte · ' + fmt2.format(t.area) + ' m²</span><span>Total CHF ' + fmt2.format(t.total) + '</span></div>' +
+    dialog('<h3>' + doc + ' erstellen?</h3><div class="doc"><span><b>' + esc([state.customer.vorname, state.customer.nachname].filter(Boolean).join(' ') || 'Ohne Namen') + '</b></span><span>' + prodTxt(t.count) + ', ' + fmt2.format(t.area) + ' m²</span><span>Total CHF ' + fmt2.format(t.total) + '</span></div>' +
       '<p>Die App vergibt die Auftragsnummer, erstellt das PDF, legt es in OneDrive ab und trägt den Auftrag ins Büro-Excel ein.</p>' +
       '<div class="acts"><button class="btn primary" data-act="go">' + doc + ' erstellen und speichern</button><button class="btn" data-act="close">Abbrechen</button></div>');
   }
@@ -1431,7 +1432,7 @@ textarea.in { min-height: 64px; resize: vertical; }
     var c = state.customer, name = [c.vorname, c.nachname].filter(Boolean).join(' ') || 'Kunde';
     var terms = contractTerms(t.total).map(function (x) { return '<li><b>' + esc(x[0]) + ':</b> ' + esc(x[1]) + '</li>'; }).join('');
     dialog('<h3>Kaufvertrag unterschreiben</h3>' +
-      '<div class="doc"><span><b>' + esc(name) + '</b></span><span>' + t.count + ' Produkte · Total <b>CHF ' + fmt2.format(t.total) + '</b></span></div>' +
+      '<div class="doc"><span><b>' + esc(name) + '</b></span><span>' + prodTxt(t.count) + ', Total <b>CHF ' + fmt2.format(t.total) + '</b></span></div>' +
       '<ul class="terms">' + terms + '</ul>' +
       '<p>Unterschrift ' + esc(name) + ':</p>' +
       '<canvas id="signPad" class="sign-pad" aria-label="Unterschriftsfeld"></canvas>' +
@@ -1651,7 +1652,7 @@ textarea.in { min-height: 64px; resize: vertical; }
     dialog('<div class="ok-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>' +
       '<h3>' + esc(r.title || ('Gespeichert: ' + r.orderNo)) + '</h3>' +
       (r.already ? '<p>Dieser Auftrag war bereits gespeichert. Es wurde nichts doppelt angelegt.</p>' :
-        '<div class="doc"><span><b>' + esc(r.name || 'Ohne Namen') + '</b></span><span>' + doc + (r.totals ? ' · ' + r.totals.count + ' Produkte · ' + fmt2.format(r.totals.area) + ' m²' : '') + '</span>' +
+        '<div class="doc"><span><b>' + esc(r.name || 'Ohne Namen') + '</b></span><span>' + doc + (r.totals ? ', ' + prodTxt(r.totals.count) + ', ' + fmt2.format(r.totals.area) + ' m²' : '') + '</span>' +
         (r.totals ? '<span>Total CHF ' + fmt2.format(r.totals.total) + '</span>' : r.open != null ? '<span>Offener Betrag CHF ' + fmt2.format(r.open) + '</span>' : '') + '</div>' +
         '<p>' + esc(r.note || 'Das PDF liegt in OneDrive, der Auftrag steht im Büro-Excel. Die Eingabe ist für den nächsten Kunden geleert.') + '</p>') +
       '<div class="acts">' +
@@ -1674,6 +1675,7 @@ textarea.in { min-height: 64px; resize: vertical; }
   function pv(r, name) { var i = ord.PH.indexOf(name); return i < 0 ? '' : r[i]; }
   function hasVal(v) { return !(v === '' || v == null); }
   function mapOf(k, v) { var m = {}; m[k] = v; return m; }
+  function prodTxt(n) { return n + (Number(n) === 1 ? ' Produkt' : ' Produkte'); }
   function stepCls(s) { s = String(s || ''); return STEP_RED.test(s) ? 'red' : STEP_ORA.test(s) ? 'ora' : /^Erledigt/.test(s) ? 'grey' : ''; }
   function stepRank(s) { var c = stepCls(s); return c === 'red' ? 0 : c === 'ora' ? 1 : c === '' ? 2 : 3; }
   // Position im Ablauf (Texte wie in der Excel-Formel «Nächster Schritt»); unbekannt = -1
@@ -1809,16 +1811,20 @@ textarea.in { min-height: 64px; resize: vertical; }
     box.innerHTML = html;
   }
 
-  // Schweizer Nummern lesbar gliedern: 078 568 10 75 bzw. +41 78 568 10 75; alles andere bleibt, wie es eingetragen ist
+  // Schweizer Nummern immer gleich gliedern: 078 568 10 75 (auch wenn +41 oder 0041 eingetragen ist); alles andere bleibt, wie es eingetragen ist
   function telFmt(t) {
-    var d = String(t).replace(/[^\d+]/g, ''), m = /^0(\d{2})(\d{3})(\d{2})(\d{2})$/.exec(d);
-    if (m) return '0' + m[1] + ' ' + m[2] + ' ' + m[3] + ' ' + m[4];
-    m = /^(?:\+|00)41(\d{2})(\d{3})(\d{2})(\d{2})$/.exec(d);
-    return m ? '+41 ' + m[1] + ' ' + m[2] + ' ' + m[3] + ' ' + m[4] : t;
+    var d = String(t).replace(/[^\d+]/g, ''), m = /^(?:0|\+41|0041)(\d{2})(\d{3})(\d{2})(\d{2})$/.exec(d);
+    return m ? '0' + m[1] + ' ' + m[2] + ' ' + m[3] + ' ' + m[4] : t;
   }
   var ICON_CHEV_DOWN = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
   var DET_PROD_KEY = 'fg_detail_produkte_offen';
   function detProdOpen() { try { return localStorage.getItem(DET_PROD_KEY) !== '0'; } catch (e) { return true; } }
+  // Hervorgehobener Schritt = der erste offene NACH dem letzten erledigten. Übersprungene Schritte davor
+  // bleiben als normale Knöpfe; ist der letzte Schritt erledigt, ist nichts mehr hervorgehoben.
+  function nextStep(F, val) {
+    var last = -1; F.forEach(function (x, i) { if (hasVal(val(x.f))) last = i; });
+    return last + 1 < F.length ? F[last + 1].f : null;
+  }
   function stepRow(done, next, label, sub, btnHtml) {
     return '<div class="step-row' + (done ? ' done' : '') + (next ? ' next' : '') + '"><span class="dot">' + (done ? ICON_OK : '') + '</span>' +
       '<span class="lbl">' + esc(label) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span>' + (btnHtml || '') + '</div>';
@@ -1887,7 +1893,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       ];
       // Mahnung fällig laut Excel-Formel «Nächster Schritt» (Zahlungsfrist bzw. Abstand zur letzten Mahnung vorbei)
       var dun = (hasVal(ov(r, 'Rechnungsdatum')) && !hasVal(ov(r, 'Bezahlt am'))) ? /^([123])\. Mahnung senden/.exec(trimmed(s)) : null;
-      var nextF = null; F.forEach(function (x) { if (!nextF && !hasVal(ov(r, x.f))) nextF = x.f; });
+      var nextF = nextStep(F, function (f) { return ov(r, f); });
       F.forEach(function (x) {
         var v = ov(r, x.f), isNext = nextF === x.f && !(dun && x.f === 'Bezahlt am');
         if (hasVal(v)) steps += stepRow(true, false, x.l, x.time ? serialDT(v) : serialText(v), '<button class="chg" data-ordact="edit" data-f="' + esc(x.f) + '" data-label="' + esc(x.l) + '"' + (x.time ? ' data-time="1"' : '') + '>ändern</button>');
@@ -1959,7 +1965,7 @@ textarea.in { min-height: 64px; resize: vertical; }
         { f: 'Termin geplant', l: 'Termin', b: 'Termin wählen', pick: true, time: true },
         { f: 'Erledigt am', l: 'Erledigt', b: 'Erledigt' }
       ];
-      var nextF = null; F.forEach(function (x) { if (!nextF && !hasVal(gv(g, x.f))) nextF = x.f; });
+      var nextF = nextStep(F, function (f) { return gv(g, f); });
       F.forEach(function (x) {
         var v = gv(g, x.f), isNext = nextF === x.f, a = df + ' data-f="' + esc(x.f) + '" data-label="' + esc(x.l) + '"' + (x.time ? ' data-time="1"' : '');
         if (hasVal(v)) rows += stepRow(true, false, x.l, x.time ? serialDT(v) : serialText(v), '<button class="chg" data-ordact="edit"' + a + '>ändern</button>');
@@ -2002,13 +2008,34 @@ textarea.in { min-height: 64px; resize: vertical; }
     }
   }
   function writeOrderCells(nr, map) { return writeRowCells('tblAuftraege', 'Auftragsnr', nr, map); }
+  // Nach dem Schreiben neu laden. Excel liefert direkt danach manchmal noch den alten Stand:
+  // dann kurz warten und nochmals laden; bleibt er alt, zeigt die App die eben geschriebenen Werte.
+  function sameVal(a, b) {
+    if (!hasVal(a) || !hasVal(b)) return !hasVal(a) && !hasVal(b);
+    var na = Number(a), nb = Number(b);
+    if (String(a).trim() !== '' && String(b).trim() !== '' && isFinite(na) && isFinite(nb)) return Math.abs(na - nb) < 1e-6;
+    return trimmed(a) === trimmed(b);
+  }
+  async function reloadAfterWrite(nr, map, fall) {
+    function row() { return fall ? findCase(fall) : findOrder(nr); }
+    function fresh() { var x = row(); return !x || Object.keys(map).every(function (k) { return sameVal(fall ? gv(x, k) : ov(x, k), map[k]); }); }
+    for (var k = 0; k < 3; k++) {
+      await loadOrders();
+      if (ord.err || fresh()) return;
+      await new Promise(function (res) { setTimeout(res, 1500); });
+    }
+    var x = row(), H = fall ? ord.GH : ord.H;
+    if (!x) return;
+    Object.keys(map).forEach(function (c) { var i = H.indexOf(c); if (i >= 0) x[i] = map[c]; });
+    renderOrders(); if (ord.sel) renderDetail();
+  }
   // fall gesetzt = Zellen des Garantiefalls (Blatt «Garantie») statt des Auftrags
   async function setFields(nr, map, fall) {
     busy = true;
     dialog('<h3>Wird gespeichert …</h3><p>Eintrag ins Büro-Excel</p>');
     try {
       if (fall) await writeRowCells('tblGarantie', 'Fall-Nr', fall, map); else await writeOrderCells(nr, map);
-      await loadOrders();
+      await reloadAfterWrite(nr, map, fall);
       busy = false; closeDialog();
     } catch (e) {
       busy = false;
@@ -2016,26 +2043,30 @@ textarea.in { min-height: 64px; resize: vertical; }
     }
   }
   // ================= Kalender =================
-  // Montagetermine kommen in den Outlook-Kalender des FlyGuard-Kontos; das iPhone zeigt ihn in der Kalender-App.
-  // Jeder Eintrag trägt die Auftragsnummer als versteckte Eigenschaft. So findet die App ihn beim Ändern
+  // Montagetermine und Garantie-Termine kommen in den Outlook-Kalender des FlyGuard-Kontos; das iPhone zeigt ihn in der Kalender-App.
+  // Jeder Eintrag trägt die Auftragsnummer (bzw. Fall-Nr) als versteckte Eigenschaft. So findet die App ihn beim Ändern
   // oder Entfernen wieder, ohne zusätzliche Spalte im Büro-Excel.
   var CAL_PROP = 'String {5f3c9a2e-7b41-4d8e-a6c2-91e0d4b7f318} Name FlyGuardAuftrag';
   var CAL_DAUER_MIN = 60, CAL_ERINNERUNG_MIN = 1440, CAL_TZ = 'W. Europe Standard Time';
   function calStamp(d) { return isoOf(d) + 'T' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':00'; }
-  function calEvent(nr, r, serial) {
+  // key = Auftragsnr (Montage) oder Fall-Nr (Garantie, z. B. 2026-11-G1); so hat jeder Termin seinen eigenen Eintrag
+  function calEvent(nr, r, serial, g) {
+    var key = g ? trimmed(gv(g, 'Fall-Nr')) : nr;
     var day = fromSerial(serial), mins = Math.round((Number(serial) - Math.floor(Number(serial))) * 1440);
     var start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, mins);
     var end = new Date(start.getTime() + CAL_DAUER_MIN * 60000);
     var strasse = trimmed(ov(r, 'Strasse')), plz = trimmed(ov(r, 'PLZ')), ort = trimmed(ov(r, 'Ort')), tel = trimmed(ov(r, 'Telefon'));
     var adresse = [strasse, [plz, ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-    var n = Number(ov(r, 'Anzahl Produkte')) || 0;
-    var notiz = ['Auftrag ' + nr, tel ? 'Tel. ' + tel : '', n ? n + (n === 1 ? ' Produkt' : ' Produkte') : ''].filter(Boolean).join('\n');
+    var n = Number(ov(r, 'Anzahl Produkte')) || 0, notiz;
+    if (g) notiz = ['Garantiefall ' + key, tel ? 'Tel. ' + tel : '',
+      [trimmed(gv(g, 'Bereich')), trimmed(gv(g, 'Produkt')), trimmed(gv(g, 'Schaden'))].filter(Boolean).join(', ')].filter(Boolean).join('\n');
+    else notiz = ['Auftrag ' + nr, tel ? 'Tel. ' + tel : '', n ? prodTxt(n) : ''].filter(Boolean).join('\n');
     var ev = {
-      subject: 'Montage ' + (custName(r) || 'Auftrag ' + nr),
+      subject: (g ? 'Garantie ' : 'Montage ') + (custName(r) || 'Auftrag ' + nr),
       start: { dateTime: calStamp(start), timeZone: CAL_TZ }, end: { dateTime: calStamp(end), timeZone: CAL_TZ },
       body: { contentType: 'text', content: notiz },
       isReminderOn: true, reminderMinutesBeforeStart: CAL_ERINNERUNG_MIN, showAs: 'busy',
-      singleValueExtendedProperties: [{ id: CAL_PROP, value: nr }]
+      singleValueExtendedProperties: [{ id: CAL_PROP, value: key }]
     };
     if (adresse) ev.location = { displayName: adresse, address: { street: strasse, postalCode: plz, city: ort, countryOrRegion: 'Schweiz' } };
     return ev;
@@ -2046,11 +2077,14 @@ textarea.in { min-height: 64px; resize: vertical; }
     return (res.value || []).map(function (e) { return e.id; });
   }
   // Kalender an den Termin anpassen; serial leer = Termin entfernen. Doppelte Einträge werden aufgeräumt.
-  async function syncCalendar(nr, serial) {
-    var ids = await calFind(nr), keep = null;
+  // fall gesetzt = Termin des Garantiefalls (eigener Eintrag mit der Fall-Nr)
+  async function syncCalendar(nr, serial, fall) {
+    var ids = await calFind(fall || nr), keep = null;
     if (hasVal(serial)) {
       var r = findOrder(nr); if (!r) throw new Error('Auftrag ' + nr + ' nicht gefunden.');
-      var ev = calEvent(nr, r, serial);
+      var g = null;
+      if (fall) { g = findCase(fall); if (!g) throw new Error('Garantiefall ' + fall + ' nicht gefunden.'); }
+      var ev = calEvent(nr, r, serial, g);
       if (ids.length) { keep = ids[0]; await graph('PATCH', '/me/events/' + encodeURIComponent(keep), ev); }
       else await graph('POST', '/me/events', ev);
     }
@@ -2059,31 +2093,32 @@ textarea.in { min-height: 64px; resize: vertical; }
       try { await graph('DELETE', '/me/events/' + encodeURIComponent(ids[i])); } catch (e) { if (e.status !== 404) throw e; }
     }
   }
-  // Montagetermin: zuerst ins Büro-Excel, danach in den Kalender
-  async function setMontage(nr, serial) {
+  // Montagetermin oder Garantie-Termin: zuerst ins Büro-Excel, danach in den Kalender
+  async function setTermin(nr, serial, fall) {
     busy = true;
+    var map = mapOf(fall ? 'Termin geplant' : 'Montage geplant', serial);
     dialog('<h3>Wird gespeichert …</h3><p>Büro-Excel und Kalender</p>');
-    try { await writeOrderCells(nr, mapOf('Montage geplant', serial)); }
+    try { if (fall) await writeRowCells('tblGarantie', 'Fall-Nr', fall, map); else await writeOrderCells(nr, map); }
     catch (e) {
       busy = false;
       dialog('<h3>Speichern nicht möglich</h3><div class="err-box">' + esc((e && e.message) || String(e)) + '</div><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
       return;
     }
     var calErr = '';
-    try { await syncCalendar(nr, serial); } catch (e) { calErr = (e && e.message) || String(e); }
-    await loadOrders();
+    try { await syncCalendar(nr, serial, fall); } catch (e) { calErr = (e && e.message) || String(e); }
+    await reloadAfterWrite(nr, map, fall);
     busy = false;
-    if (calErr) calErrorDialog(nr, serial, calErr); else closeDialog();
+    if (calErr) calErrorDialog(nr, serial, calErr, fall); else closeDialog();
   }
-  function calErrorDialog(nr, serial, msg) {
+  function calErrorDialog(nr, serial, msg, fall) {
     dialog('<h3>Kalender nicht angepasst</h3><p>Der Termin ist im Büro-Excel ' + (hasVal(serial) ? 'gespeichert' : 'entfernt') + ', aber der Kalender konnte nicht angepasst werden.</p>' +
       '<div class="err-box">' + esc(msg) + '</div>' +
       '<div class="acts"><button class="btn primary" data-act="calRetry">Nochmals versuchen</button><button class="btn" data-act="close">OK</button></div>');
     dialogActions.calRetry = async function () {
       if (busy) return;
       busy = true; dialog('<h3>Kalender …</h3><p>Wird angepasst.</p>');
-      try { await syncCalendar(nr, serial); busy = false; closeDialog(); }
-      catch (e) { busy = false; calErrorDialog(nr, serial, (e && e.message) || String(e)); }
+      try { await syncCalendar(nr, serial, fall); busy = false; closeDialog(); }
+      catch (e) { busy = false; calErrorDialog(nr, serial, (e && e.message) || String(e), fall); }
     };
   }
 
@@ -2105,11 +2140,15 @@ textarea.in { min-height: 64px; resize: vertical; }
         var t = $('dlgTime').value;
         if (!t) { $('dlgHint').textContent = 'Bitte eine Uhrzeit wählen.'; return; }
         var hm = t.split(':'); serial += (Number(hm[0]) * 60 + Number(hm[1])) / 1440;
-        if (CONFIG.calendar && !fall) { setMontage(nr, serial); return; }
+        if (CONFIG.calendar) { setTermin(nr, serial, fall); return; }
       }
       setFields(nr, mapOf(field, serial), fall);
     };
-    dialogActions.dateClr = function () { if (withTime && CONFIG.calendar && !fall) setMontage(nr, ''); else setFields(nr, mapOf(field, ''), fall); };
+    // Entfernen braucht einen zweiten Tipp (wie «Löschen» beim Erfassen)
+    dialogActions.dateClr = function (b) {
+      if (b && !b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Wirklich?'; return; }
+      if (withTime && CONFIG.calendar) setTermin(nr, '', fall); else setFields(nr, mapOf(field, ''), fall);
+    };
   }
   // Kosten eines Auftrags in CHF; leeres Feld = keine Angabe. Erlaubt: 245.50, 245,50, 1'200
   function parseChf(raw) {
@@ -2126,7 +2165,7 @@ textarea.in { min-height: 64px; resize: vertical; }
         esc(cur(f)) + '"><span>CHF</span></div></div>';
     }
     dialog((fall ? '<h3>Kosten Ersatz</h3><p>Garantiefall ' + esc(fall) + ', ' + esc(caseName(r) || 'Ohne Namen') + '. Diese Kosten werden im Dashboard vom Gewinn abgezogen.</p>'
-      : '<h3>Kosten</h3><p>Auftrag ' + esc(nr) + ' · ' + esc(custName(r) || 'Ohne Namen') + ' · Betrag CHF ' + fmt2.format(Number(ov(r, 'Betrag CHF')) || 0) + '</p>') +
+      : '<h3>Kosten</h3><p>Auftrag ' + esc(nr) + ', ' + esc(custName(r) || 'Ohne Namen') + ', Betrag CHF ' + fmt2.format(Number(ov(r, 'Betrag CHF')) || 0) + '</p>') +
       '<div class="grid2">' + feld('kE', 'Einkauf', 'Kosten Einkauf CHF') + feld('kL', 'Lieferung', 'Kosten Lieferung CHF') + '</div>' +
       (fall ? '' : '<p>Lieferung für mehrere Aufträge: ganzen Betrag bei einem Auftrag eintragen, bei den anderen 0 – oder selbst aufteilen.</p>') +
       '<div class="hint" id="kHint"></div>' +
@@ -2150,7 +2189,7 @@ textarea.in { min-height: 64px; resize: vertical; }
   }
   function acceptDialog(nr) {
     var r = findOrder(nr); if (!r) return;
-    dialog('<h3>Offerte angenommen?</h3><div class="doc"><span><b>' + esc(custName(r) || 'Ohne Namen') + '</b></span><span>Offerte ' + esc(nr) + ' · CHF ' + fmt2.format(Number(ov(r, 'Betrag CHF')) || 0) + '</span></div>' +
+    dialog('<h3>Offerte angenommen?</h3><div class="doc"><span><b>' + esc(custName(r) || 'Ohne Namen') + '</b></span><span>Offerte ' + esc(nr) + ', CHF ' + fmt2.format(Number(ov(r, 'Betrag CHF')) || 0) + '</span></div>' +
       '<p>Die App trägt «Angenommen» ins Büro-Excel ein und legt eine Auftragsbestätigung als PDF in den Auftragsordner.</p>' +
       '<div class="acts"><button class="btn primary" data-act="accGo">Ja, Auftragsbestätigung erstellen</button><button class="btn" data-act="close">Abbrechen</button></div>');
     dialogActions.accGo = function () { acceptOffer(nr); };
@@ -2165,7 +2204,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       var fileName = 'Auftragsbestätigung_' + nr + '_' + d.person.replace(/ /g, '_') + '.pdf';
       var file = await saveOrderPdf(d.folder, fileName, pdf);
       await writeOrderCells(nr, { 'Offertenstatus': 'Angenommen', 'Ablehnungsgrund': '' });
-      await loadOrders();
+      await reloadAfterWrite(nr, { 'Offertenstatus': 'Angenommen', 'Ablehnungsgrund': '' });
       busy = false;
       lastPdf = { blob: pdf, name: fileName };
       shareDialog({ kind: 'bestaetigung', orderNo: nr, name: custName(r), phone: d.cust.telefon, fileUrl: file.webUrl, totals: d.totals,
@@ -2224,7 +2263,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       var fileName = 'Rechnung_' + nr + '_' + d.person.replace(/ /g, '_') + '.pdf';
       var file = await saveOrderPdf(d.folder, fileName, pdf);
       await writeOrderCells(nr, { 'Rechnungsdatum': excelDate(now) });
-      await loadOrders();
+      await reloadAfterWrite(nr, { 'Rechnungsdatum': excelDate(now) });
       busy = false;
       lastPdf = { blob: pdf, name: fileName };
       shareDialog({ kind: 'rechnung', orderNo: nr, name: custName(r), phone: d.cust.telefon, fileUrl: file.webUrl, totals: d.totals,
@@ -2260,7 +2299,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       var fileName = 'Mahnung_' + stufe + '_' + nr + '_' + d.person.replace(/ /g, '_') + '.pdf';
       var file = await saveOrderPdf(d.folder, fileName, pdf);
       await writeOrderCells(nr, { 'Mahnstufe': stufe, 'Letzte Mahnung': excelDate(now) });
-      await loadOrders();
+      await reloadAfterWrite(nr, { 'Mahnstufe': stufe, 'Letzte Mahnung': excelDate(now) });
       busy = false;
       lastPdf = { blob: pdf, name: fileName };
       shareDialog({ kind: 'mahnung', orderNo: nr, name: custName(r), phone: d.cust.telefon, fileUrl: file.webUrl, open: dunTotal(d.totals.total, stufe),
@@ -2304,6 +2343,11 @@ textarea.in { min-height: 64px; resize: vertical; }
       }).join('') + '<button class="g-add" data-act="gPick" aria-label="Foto hinzufügen">' + ICON_CAM + '</button>';
     }
     thumbs();
+    // Rote Markierung verschwindet, sobald das Feld ausgefüllt ist
+    function okNow(el) { el.classList.remove('err'); $('gHint').textContent = ''; }
+    $('gPos').addEventListener('change', function () { okNow($('gPos')); });
+    $('gSch').addEventListener('change', function () { if (this.value) okNow(this); if (this.value !== 'Sonstiges') $('gBem').classList.remove('err'); });
+    $('gBem').addEventListener('input', function () { if (trimmed(this.value)) okNow(this); });
     $('gFile').addEventListener('change', function () {
       Array.prototype.forEach.call(this.files || [], function (f) { files.push({ file: f, url: URL.createObjectURL(f) }); });
       this.value = ''; thumbs();
