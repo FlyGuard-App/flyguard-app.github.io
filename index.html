@@ -163,6 +163,20 @@ textarea.in { min-height: 64px; resize: vertical; }
 .big small { font-weight: 400; font-size: 12.5px; color: var(--muted); }
 .big.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
 .big.primary small { color: var(--primary-fg); opacity: .85; }
+/* Unter jeder Kachel der kleine Knopf «Vorschau»; bei einer Korrektur gibt es nur eine Kachel */
+.dcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dcol .btn { flex: none; min-height: 44px; font-size: 15px; }
+.decide.one { grid-template-columns: 1fr; }
+/* Vorschau: PDF-Seiten über der App, oben «Zurück zur Eingabe» */
+.pv { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: flex; flex-direction: column; }
+.pv-bar { flex: none; display: flex; align-items: center; gap: 12px; background: var(--surface); border-bottom: 1px solid var(--line);
+  padding: calc(8px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); }
+.pv-bar .btn { flex: none; min-height: 44px; font-size: 15px; }
+.pv-bar span { flex: 1; min-width: 0; text-align: right; font-size: 15px; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-pages { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 12px;
+  padding: 12px max(12px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); }
+.pv-page { display: block; width: 100%; height: auto; background: #fff; border-radius: 4px; box-shadow: var(--shadow); }
+.pv-pages .fine { text-align: center; padding: 24px 0; }
 .dlg-bg { position: fixed; inset: 0; z-index: 30; background: rgba(8, 12, 10, .5); display: grid; place-items: center;
   padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
 .dlg { width: 100%; max-width: 420px; max-height: 100%; overflow-y: auto; background: var(--surface); border-radius: 20px; padding: 20px; display: flex; flex-direction: column; gap: 14px; box-shadow: var(--shadow); }
@@ -312,6 +326,11 @@ textarea.in { min-height: 64px; resize: vertical; }
     <span><b>Nicht angemeldet.</b> Zum Speichern einmal mit deinem FlyGuard-Konto anmelden. Erfassen geht auch ohne.</span>
     <button class="btn primary" id="loginBtn">Mit FlyGuard-Konto anmelden</button>
   </div>
+  <!-- Korrektur eines gespeicherten Auftrags: gleiche Nummer, PDF und Excel werden ersetzt -->
+  <div class="notice warn" id="fixNotice" hidden>
+    <span id="fixTxt"></span>
+    <button class="btn" id="fixCancel">Korrektur abbrechen</button>
+  </div>
 
   <!-- 1. Kundendaten -->
   <section class="card" id="custCard">
@@ -385,7 +404,11 @@ textarea.in { min-height: 64px; resize: vertical; }
     <div class="card-b" id="sumBody">
       <div class="kv"><span>Produkte</span><span class="v" id="sCount">0</span></div>
       <div class="kv"><span>Gesamtfläche</span><span class="v" id="sArea">0.00 m²</span></div>
+      <div class="kv" id="sListRow" hidden><span>Preis laut Liste</span><span class="v" id="sList">CHF 0.00</span></div>
       <div class="kv total"><span>Gesamtpreis</span><span class="v" id="sTotal">CHF 0.00</span></div>
+      <!-- Mit dem Kunden ausgehandelter Preis: gilt dann als Gesamtpreis (Positionen werden anteilig angepasst) -->
+      <div class="field"><label for="sVereinbart">Vereinbarter Preis <i>(optional)</i></label><div class="unit chf"><input class="in" id="sVereinbart" inputmode="decimal" autocomplete="off" enterkeyhint="done"><span>CHF</span></div></div>
+      <div class="hint" id="hVereinbart"></div>
     </div>
   </section>
 
@@ -396,9 +419,15 @@ textarea.in { min-height: 64px; resize: vertical; }
       <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
     </button>
     <div class="card-b" id="decBody">
-      <div class="decide">
-        <button class="big" id="btnOfferte"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg><span>Offerte<br>erstellen</span></button>
-        <button class="big" id="btnDirekt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16.5 9.5"/></svg><span>Kaufvertrag<br>erstellen</span></button>
+      <div class="decide" id="decide">
+        <div class="dcol" id="colOfferte">
+          <button class="big" id="btnOfferte"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg><span id="lblOfferte">Offerte<br>erstellen</span></button>
+          <button class="btn" id="pvOfferte">Vorschau</button>
+        </div>
+        <div class="dcol" id="colDirekt">
+          <button class="big" id="btnDirekt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16.5 9.5"/></svg><span id="lblDirekt">Kaufvertrag<br>erstellen</span></button>
+          <button class="btn" id="pvDirekt">Vorschau</button>
+        </div>
       </div>
     </div>
   </section>
@@ -431,6 +460,11 @@ textarea.in { min-height: 64px; resize: vertical; }
 </nav>
 
 <div class="dlg-bg" id="dlgBg" hidden><div class="dlg" role="alertdialog" aria-modal="true" id="dlg"></div></div>
+<!-- Vorschau: Entwurf als PDF anzeigen, ohne etwas zu speichern -->
+<div class="pv" id="pv" role="dialog" aria-modal="true" aria-labelledby="pvTitle" hidden>
+  <div class="pv-bar"><button class="btn" id="pvBack">‹ Zurück zur Eingabe</button><span id="pvTitle"></span></div>
+  <div class="pv-pages" id="pvPages"></div>
+</div>
 
 <script>
 (function () {
@@ -467,7 +501,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       tuer: makeGrid(range(80, 200), range(200, 260), function (w, h) { return 500 + 37.5 * (w - 90) / 10 + 15 * (h - 210) / 10; })
     }
   };
-  var APP_VERSION = '14.11.2026 · 8a';
+  var APP_VERSION = '18.11.2026 · 8b';
   var KEY_STATE = 'flyguard-erfassung-v1', KEY_MASTER = 'flyguard-stammdaten-v2';
   // «lauf» (flache Laufschiene: 'Ja' / 'Nein' / '') hat kein Eingabefeld, sondern den Ja/Nein-Schalter
   // Tiefe wird seit 7h nicht mehr erfasst (alte Aufträge behalten ihre Tiefe im Excel)
@@ -569,7 +603,13 @@ textarea.in { min-height: 64px; resize: vertical; }
     return { zimmer: '', zusatz: '', produkt: carry ? carry.produkt : '', lauf: carry ? (carry.lauf || '') : '', farbe: carry ? carry.farbe : '', farbeText: carry ? (carry.farbeText || '') : '',
       gewebe: carry && carry.gewebe ? carry.gewebe : (master.gewebe[0] || ''), breite: '', hoehe: '', bem: '' };
   }
-  function emptyState() { return { captureId: uid(), startedAt: new Date().toISOString(), custOpen: true, prodOpen: true, sumOpen: true, decOpen: true, editId: null, stash: null, customer: {}, elements: [], form: emptyForm(null), pending: null }; }
+  // vereinbart = mit dem Kunden ausgehandelter Preis (Text wie eingetippt); korrektur = gespeicherter Auftrag, der gerade korrigiert wird
+  function emptyState() { return { captureId: uid(), startedAt: new Date().toISOString(), custOpen: true, prodOpen: true, sumOpen: true, decOpen: true, editId: null, stash: null, customer: {}, elements: [], form: emptyForm(null), pending: null, vereinbart: '', korrektur: null }; }
+  // Ist im Reiter «Erfassen» etwas offen, das beim Laden eines anderen Auftrags verloren ginge?
+  function captureOpen() {
+    var c = state.customer || {};
+    return !!(state.elements.length || state.korrektur || trimmed(state.vereinbart) || CUST_FIELDS.some(function (k) { return trimmed(c[k]); }));
+  }
   function save() { store(KEY_STATE, state); }
   function blankForm() { var last = state.elements.length ? state.elements[state.elements.length - 1] : null; return emptyForm(last); }
   function formHasInput(f) { return !!(f.zimmer || trimmed(f.zusatz) || trimmed(f.breite) || trimmed(f.hoehe) || trimmed(f.bem)); }
@@ -718,8 +758,38 @@ textarea.in { min-height: 64px; resize: vertical; }
     touched = { breite: true, hoehe: true, zusatz: true };
     renderAll(true); $('pform').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
-  // Positionen mit gerundeten Werten (so wie auf dem Dokument)
+  // Vereinbarter Preis: «1150», «1'150.50», «1150,50» oder «1150.–»; leer = Preis laut Liste
+  function parseAgreed(raw) {
+    var s = trimmed(raw).replace(/[\s'’‘`]/g, '').replace(/[.,][-–—]+$/, '').replace(',', '.');
+    if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+    var v = round(parseFloat(s), 2);
+    return v > 0 ? v : null;
+  }
+  function agreedInfo() {
+    if (!trimmed(state.vereinbart)) return { empty: true };
+    var v = parseAgreed(state.vereinbart);
+    return v == null ? { bad: true } : { ok: true, val: v };
+  }
+  // Positionen mit gerundeten Werten (so wie auf dem Dokument). Mit vereinbartem Preis werden die Positionspreise
+  // anteilig darauf verteilt: ganze Franken (bei Rappen im vereinbarten Preis auf 5 Rappen), der Rest kommt auf die
+  // teuerste Position. So ergeben die Positionen genau den vereinbarten Preis, ohne Zeile «Rabatt».
   function positions() {
+    var ps = listPositions(), a = agreedInfo();
+    if (!a.ok) return ps;
+    var priced = ps.filter(function (p) { return p.price != null; });
+    var list = priced.reduce(function (s, p) { return s + p.price; }, 0);
+    if (!priced.length || !(list > 0)) return ps;
+    var aC = Math.round(a.val * 100), steps = aC % 100 === 0 ? [100, 5, 1] : aC % 5 === 0 ? [5, 1] : [1];
+    for (var k = 0; k < steps.length; k++) {
+      var st = steps[k], sum = 0, big = null;
+      priced.forEach(function (p) { p.cents = Math.round(p.price * aC / list / st) * st; sum += p.cents; if (!big || p.price > big.price) big = p; });
+      big.cents += aC - sum;
+      if (big.cents >= 0) break;   // nur bei sehr kleinen Beträgen nötig: feiner runden
+    }
+    priced.forEach(function (p) { p.listPrice = p.price; p.price = p.cents / 100; delete p.cents; });
+    return ps;
+  }
+  function listPositions() {
     return state.elements.map(function (e, i) {
       var c = calc(e);
       var area = c.area != null ? round(c.area, 4) : null;
@@ -730,17 +800,48 @@ textarea.in { min-height: 64px; resize: vertical; }
         art: c.r ? c.r.art : '', feld: c.r ? c.r.feld : '', outside: !!(c.r && c.r.outside) };
     });
   }
+  // total = Gesamtpreis (vereinbart oder laut Liste), list = Preis laut Liste
   function totals() {
-    var area = 0, total = 0;
-    positions().forEach(function (p) { if (p.area != null) area += p.area; if (p.price != null) total += p.price; });
-    return { count: state.elements.length, area: round(area, 4), total: round(total, 2) };
+    var area = 0, total = 0, list = 0;
+    positions().forEach(function (p) {
+      if (p.area != null) area += p.area;
+      if (p.price != null) { total += p.price; list += p.listPrice != null ? p.listPrice : p.price; }
+    });
+    return { count: state.elements.length, area: round(area, 4), total: round(total, 2), list: round(list, 2) };
   }
   function renderSummary() {
-    var t = totals();
+    var t = totals(), a = agreedInfo(), inp = $('sVereinbart');
     $('sCount').textContent = t.count; $('sArea').textContent = fmt2.format(t.area) + ' m²'; $('sTotal').textContent = 'CHF ' + fmt2.format(t.total);
+    var typing = document.activeElement === inp, bad = a.bad && !typing;   // Fehler erst nach dem Tippen zeigen
+    if (!typing) inp.value = state.vereinbart || '';
+    $('sListRow').hidden = !a.ok; $('sList').textContent = 'CHF ' + fmt2.format(t.list);
+    inp.classList.toggle('err', !!bad);
+    $('hVereinbart').textContent = bad ? 'Bitte einen Betrag eingeben, z. B. 1150 oder 1150.50. Bis dahin gilt der Preis laut Liste.'
+      : (a.ok && !(t.list > 0)) ? 'Gilt, sobald ein Produkt mit Massen erfasst ist.' : '';
     $('srcInfo').textContent = 'Preisraster und Listen: ' + (master.source === 'Excel' ? 'aus Excel, geladen ' + master.loadedAt : 'Standardwerte (noch nicht aus Excel geladen)') + ' · App-Version ' + APP_VERSION;
   }
-  function renderAll(syncForm) { renderCustomer(); renderForm(syncForm); renderList(); renderFolds(); renderSummary(); renderAuth(); save(); }
+  $('sVereinbart').addEventListener('input', function () { state.vereinbart = this.value; renderSummary(); save(); });
+  $('sVereinbart').addEventListener('blur', function () { renderSummary(); });
+  $('sVereinbart').addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.keyCode === 13) { ev.preventDefault(); this.blur(); } });
+
+  // Korrektur: Hinweis oben, nur die passende Kachel («Offerte korrigieren» bzw. «Kaufvertrag korrigieren»)
+  function renderFix() {
+    var k = state.korrektur;
+    $('fixNotice').hidden = !k;
+    if (k) $('fixTxt').innerHTML = '<b>Korrektur von ' + (k.kind === 'direkt' ? 'Kaufvertrag ' : 'Offerte ') + esc(k.nr) + '.</b> Speichern ersetzt das PDF und den Eintrag im Büro-Excel, die Nummer bleibt.' +
+      (k.kind === 'direkt' ? ' Der Kunde unterschreibt nochmals.' : '');
+    $('colOfferte').hidden = !!(k && k.kind === 'direkt');
+    $('colDirekt').hidden = !!(k && k.kind !== 'direkt');
+    $('decide').classList.toggle('one', !!k);
+    $('lblOfferte').innerHTML = 'Offerte<br>' + (k ? 'korrigieren' : 'erstellen');
+    $('lblDirekt').innerHTML = 'Kaufvertrag<br>' + (k ? 'korrigieren' : 'erstellen');
+  }
+  $('fixCancel').addEventListener('click', function () {
+    var k = state.korrektur; if (!k) return;
+    dialog('<h3>Korrektur abbrechen?</h3><p>Deine Änderungen werden verworfen. ' + (k.kind === 'direkt' ? 'Der Kaufvertrag ' : 'Die Offerte ') + esc(k.nr) + ' bleibt, wie sie gespeichert ist.</p>' +
+      '<div class="acts"><button class="btn primary" data-act="new">Korrektur abbrechen</button><button class="btn" data-act="close">Weiter korrigieren</button></div>');
+  });
+  function renderAll(syncForm) { renderCustomer(); renderForm(syncForm); renderList(); renderFolds(); renderSummary(); renderFix(); renderAuth(); save(); }
 
   // ================= Dialog & Menü =================
   function dialog(html) { $('dlg').innerHTML = html; $('dlgBg').hidden = false; document.body.classList.add('locked'); var f = $('dlg').querySelector('button, a'); if (f) f.focus(); }
@@ -766,10 +867,11 @@ textarea.in { min-height: 64px; resize: vertical; }
   // Muster-PDF: zeigt das Layout mit den aktuellen Eingaben (oder Beispieldaten), ohne etwas zu speichern
   $('mPreview').addEventListener('click', async function () {
     toggleMenu(false);
-    var saved = state.elements, cust = state.customer;
+    var saved = state.elements, cust = state.customer, savedV = state.vereinbart;
     dialog('<h3>Muster-PDF</h3><p>Wird erstellt …</p>');
     try {
       if (!state.elements.length) {
+        state.vereinbart = '';   // Beispieldaten immer zum Preis laut Liste
         var pr = master.produkte, gw = master.gewebe;
         state.elements = [
           { id: 'm1', zimmer: 'Schlafzimmer', zusatz: '', produkt: pr[0].name, lauf: 'Nein', farbe: master.farben[0], gewebe: gw[0], breite: '120', hoehe: '140', bem: '' },
@@ -779,7 +881,7 @@ textarea.in { min-height: 64px; resize: vertical; }
         if (!trimmed(cust.nachname)) cust = { vorname: 'Anna', nachname: 'Muster', strasse: 'Musterweg 12', plz: '8000', ort: 'Zürich', telefon: '079 123 45 67' };
       }
       var pos = positions(), tot = totals(), now = new Date();
-      state.elements = saved;
+      state.elements = saved; state.vereinbart = savedV;
       var base = { orderNo: 'MUSTER', dateText: dateCH(now), validUntil: dateCH(addDays(now, firma().gueltigTage || 30)), customer: cust, signPlace: trimmed(cust.ort), positions: pos, totals: tot };
       // Beispiel-Unterschrift, damit man sieht, wo sie im Vertrag erscheint
       var cv = document.createElement('canvas'); cv.width = 600; cv.height = 220;
@@ -806,7 +908,7 @@ textarea.in { min-height: 64px; resize: vertical; }
         '<button class="btn" data-act="close">Schliessen</button></div>' +
         (pay.err ? '<p class="fine">Rechnung und Mahnung: ' + esc(pay.err) + '</p>' : ''));
     } catch (e) {
-      state.elements = saved;
+      state.elements = saved; state.vereinbart = savedV;
       dialog('<h3>PDF-Fehler</h3><div class="err-box">' + esc(e.message || String(e)) + '</div><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
     }
   });
@@ -1343,6 +1445,9 @@ textarea.in { min-height: 64px; resize: vertical; }
     if (bad.length) warn.push(bad.length + (bad.length === 1 ? ' Produkt ist' : ' Produkte sind') + ' unvollständig');
     if (state.editId) warn.push('Ein Produkt ist noch in Bearbeitung (nicht gespeichert)');
     else if (formHasInput(state.form)) warn.push('Im Formular steht ein angefangenes Produkt, das noch nicht hinzugefügt ist');
+    var ag = agreedInfo(), tl = totals();
+    if (ag.bad) warn.push('Der vereinbarte Preis ist keine gültige Zahl, es gilt der Preis laut Liste');
+    else if (ag.ok && ag.val > tl.list && tl.list > 0) warn.push('Der vereinbarte Preis ist höher als der Preis laut Liste (CHF ' + fmt2.format(tl.list) + ')');
     if (!state.elements.length) {
       dialog('<h3>Keine Produkte</h3><p>Erfasse zuerst mindestens ein Produkt.</p><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
       return;
@@ -1362,10 +1467,17 @@ textarea.in { min-height: 64px; resize: vertical; }
       dialog('<h3>Bitte anmelden</h3><p>Zum Speichern musst du einmal mit deinem FlyGuard-Konto angemeldet sein. Deine Erfassung bleibt erhalten.</p><div class="acts"><button class="btn primary" data-act="login">Jetzt anmelden</button><button class="btn" data-act="close">Abbrechen</button></div>');
       return;
     }
-    var t = totals(), doc = kind === 'direkt' ? 'Kaufvertrag' : 'Offerte';
+    var t = totals(), doc = kind === 'direkt' ? 'Kaufvertrag' : 'Offerte', k = state.korrektur;
     if (kind === 'direkt') { signDialog(t); return; }
     dialogActions.go = function () { runSave(kind); };
-    dialog('<h3>' + doc + ' erstellen?</h3><div class="doc"><span><b>' + esc([state.customer.vorname, state.customer.nachname].filter(Boolean).join(' ') || 'Ohne Namen') + '</b></span><span>' + prodTxt(t.count) + ', ' + fmt2.format(t.area) + ' m²</span><span>Total CHF ' + fmt2.format(t.total) + '</span></div>' +
+    var docBox = '<div class="doc"><span><b>' + esc([state.customer.vorname, state.customer.nachname].filter(Boolean).join(' ') || 'Ohne Namen') + '</b></span><span>' + prodTxt(t.count) + ', ' + fmt2.format(t.area) + ' m²</span><span>Total CHF ' + fmt2.format(t.total) + '</span></div>';
+    if (k) {
+      dialog('<h3>' + doc + ' ' + esc(k.nr) + ' korrigieren?</h3>' + docBox +
+        '<p>Die App erstellt das PDF neu, ersetzt es in OneDrive und aktualisiert den Auftrag im Büro-Excel. Die Nummer bleibt ' + esc(k.nr) + '.</p>' +
+        '<div class="acts"><button class="btn primary" data-act="go">' + doc + ' korrigieren und speichern</button><button class="btn" data-act="close">Abbrechen</button></div>');
+      return;
+    }
+    dialog('<h3>' + doc + ' erstellen?</h3>' + docBox +
       '<p>Die App vergibt die Auftragsnummer, erstellt das PDF, legt es in OneDrive ab und trägt den Auftrag ins Büro-Excel ein.</p>' +
       '<div class="acts"><button class="btn primary" data-act="go">' + doc + ' erstellen und speichern</button><button class="btn" data-act="close">Abbrechen</button></div>');
   }
@@ -1514,8 +1626,9 @@ textarea.in { min-height: 64px; resize: vertical; }
   $('mSig').addEventListener('click', function () { toggleMenu(false); ownSigDialog(); });
 
   var STEPS = ['Auftragsnummer vergeben', 'PDF erstellen', 'In OneDrive ablegen', 'Ins Büro-Excel eintragen'];
-  function showSteps(active, failMsg) {
-    var html = '<h3>Speichern …</h3><ul class="steps">' + STEPS.map(function (s, i) {
+  var FIX_STEPS = ['Auftrag im Büro-Excel suchen', 'PDF erstellen', 'In OneDrive ersetzen', 'Büro-Excel aktualisieren'];
+  function showSteps(active, failMsg, list) {
+    var html = '<h3>Speichern …</h3><ul class="steps">' + (list || STEPS).map(function (s, i) {
       var cls = i < active ? 'done' : (i === active ? (failMsg ? 'fail' : 'run') : '');
       return '<li class="' + cls + '">' + esc(s) + '</li>';
     }).join('') + '</ul>';
@@ -1523,7 +1636,23 @@ textarea.in { min-height: 64px; resize: vertical; }
     dialog(html);
   }
 
+  // Zeile für tblPositionen nach Spaltenname (Preis pro m² bleibt leer, der Preis kommt aus dem Raster bzw. dem vereinbarten Preis)
+  function posRow(nr, q, PH) {
+    var pr = {
+      'Auftragsnr': nr, 'Pos': q.pos, 'Zimmer': q.zimmer, 'Zusatzbezeichnung': q.zusatz, 'Bereich': q.bereich, 'Produkt': q.produkt,
+      'Flache Laufschiene': q.lauf, 'Farbe': q.farbe, 'Gewebe': q.gewebe, 'Breite cm': q.breite, 'Höhe cm': q.hoehe, 'Tiefe cm': q.tiefe == null ? '' : q.tiefe,
+      'Fläche m²': q.area, 'Preis pro m²': '', 'Preis CHF': q.price, 'Bemerkung': q.bem, 'Art': q.art, 'Rasterfeld': q.feld,
+      'Preishinweis': q.outside ? 'ausserhalb Raster – bitte prüfen' : ''
+    };
+    return PH.map(function (h) { return Object.prototype.hasOwnProperty.call(pr, h) ? pr[h] : null; });
+  }
+  // Stand der Erfassung beim Speichern, damit «korrigieren» im Fenster danach alles wieder laden kann
+  function captureSnapshot() {
+    return JSON.parse(JSON.stringify({ customer: state.customer, elements: state.elements, vereinbart: state.vereinbart || '' }));
+  }
+
   async function runSave(kind, signature) {
+    if (state.korrektur) return runCorrection(kind, signature);
     if (busy) return; busy = true;
     dialogActions.retry = function () { runSave(kind); };
     var step = 0;
@@ -1576,22 +1705,14 @@ textarea.in { min-height: 64px; resize: vertical; }
       var rec = {
         'Auftragsnr': p.orderNo, 'Jahr': p.year, 'LaufNr': p.laufNr, 'Erfasst am': serial, 'Verkaufsart': kind === 'direkt' ? 'Direktbestellung' : 'Offerte',
         'Vorname': trimmed(c.vorname), 'Nachname': trimmed(c.nachname), 'Strasse': trimmed(c.strasse), 'PLZ': trimmed(c.plz), 'Ort': trimmed(c.ort),
-        'Telefon': trimmed(c.telefon), 'E-Mail': trimmed(c.email), 'Anzahl Produkte': tt.count, 'Fläche m²': tt.area, 'Betrag CHF': tt.total,
+        'Telefon': trimmed(c.telefon), 'E-Mail': trimmed(c.email), 'Anzahl Produkte': tt.count, 'Fläche m²': tt.area, 'Betrag CHF': tt.total, 'Listenpreis CHF': tt.list,
         'Dokument': docName, 'Dokument-Link': p.fileUrl, 'Ordner-Link': p.folderUrl,
         'Offertenstatus': kind === 'direkt' ? 'Keine Offerte – Direktbestellung' : 'Offen', 'Erfassungs-ID': state.captureId
       };
       var orderRow = H.map(function (h) { return Object.prototype.hasOwnProperty.call(rec, h) ? rec[h] : null; });
-      // Positionen ebenfalls nach Spaltenname (Preis pro m² bleibt leer, der Preis kommt aus dem Raster)
+      // Positionen ebenfalls nach Spaltenname
       var PH = await tableHeaders('tblPositionen');
-      var posRows = pos.map(function (q) {
-        var pr = {
-          'Auftragsnr': p.orderNo, 'Pos': q.pos, 'Zimmer': q.zimmer, 'Zusatzbezeichnung': q.zusatz, 'Bereich': q.bereich, 'Produkt': q.produkt,
-          'Flache Laufschiene': q.lauf, 'Farbe': q.farbe, 'Gewebe': q.gewebe, 'Breite cm': q.breite, 'Höhe cm': q.hoehe, 'Tiefe cm': q.tiefe == null ? '' : q.tiefe,
-          'Fläche m²': q.area, 'Preis pro m²': '', 'Preis CHF': q.price, 'Bemerkung': q.bem, 'Art': q.art, 'Rasterfeld': q.feld,
-          'Preishinweis': q.outside ? 'ausserhalb Raster – bitte prüfen' : ''
-        };
-        return PH.map(function (h) { return Object.prototype.hasOwnProperty.call(pr, h) ? pr[h] : null; });
-      });
+      var posRows = pos.map(function (q) { return posRow(p.orderNo, q, PH); });
       await addRows('tblPositionen', posRows);
       await addRows('tblAuftraege', [orderRow]);
       // Kommt die Erfassung aus einem Garantiefall ausserhalb der Garantie: neue Auftragsnr beim Fall eintragen (schliesst ihn ab)
@@ -1603,13 +1724,162 @@ textarea.in { min-height: 64px; resize: vertical; }
       lastPdf = { blob: pdf, name: fileName };
       busy = false;
       finished({ orderNo: p.orderNo, kind: kind, fileUrl: p.fileUrl, folderUrl: p.folderUrl, name: [c.vorname, c.nachname].filter(Boolean).join(' '), phone: trimmed(c.telefon), totals: tt,
-        note: gNote ? 'Das PDF liegt in OneDrive, der Auftrag steht im Büro-Excel.' + gNote : '' });
+        note: gNote ? 'Das PDF liegt in OneDrive, der Auftrag steht im Büro-Excel.' + gNote : '',
+        fix: { nr: p.orderNo, kind: kind, folderId: p.folderId, folderUrl: p.folderUrl, fileUrl: p.fileUrl, snap: captureSnapshot() } });
     } catch (e) {
       busy = false;
       if (e && e.errorCode === 'interaction_in_progress') return;
       showSteps(step, (e && e.message) || String(e));
     }
   }
+  // ---- Korrigieren: gespeicherte Offerte / gespeicherten Kaufvertrag mit gleicher Nummer neu speichern ----
+  // Nur solange die Offerte offen ist (nicht angenommen, nicht abgelehnt) bzw. der Kaufvertrag noch nicht bestellt ist.
+  // get(name) liefert den Wert der Spalte im Büro-Excel; Rückgabe '' = korrigieren erlaubt, sonst der Grund
+  function fixBlock(get) {
+    if (trimmed(get('Verkaufsart')) === 'Offerte') {
+      var st = trimmed(get('Offertenstatus'));
+      if (st === 'Angenommen') return 'Die Offerte ist schon angenommen.';
+      if (st === 'Abgelehnt' || trimmed(get('Ablehnungsgrund'))) return 'Die Offerte ist abgelehnt.';
+      return '';
+    }
+    return hasVal(get('Bestellt am')) ? 'Der Kaufvertrag ist schon beim Lieferanten bestellt.' : '';
+  }
+  function fixBlockedDialog(why) {
+    dialog('<h3>Korrigieren nicht möglich</h3><p>' + esc(why) + ' Korrigieren geht nur, solange die Offerte offen ist bzw. der Kaufvertrag noch nicht bestellt ist.</p>' +
+      '<div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
+  }
+  // Korrektur in «Erfassen» starten: Kunde, Produkte und vereinbarten Preis laden
+  function startFix(fix, snap) {
+    state = emptyState(); touched = {};
+    state.customer = snap.customer || {}; state.elements = snap.elements || []; state.vereinbart = snap.vereinbart || '';
+    state.form = blankForm();
+    state.korrektur = { nr: fix.nr, kind: fix.kind, folderId: fix.folderId || null, folderUrl: fix.folderUrl || '', fileUrl: fix.fileUrl || '' };
+    closeDialog(); renderAll(true); showTab('erfassen');
+  }
+  function numTxt(v) { return hasVal(v) && isFinite(Number(v)) ? String(round(Number(v), 2)) : ''; }
+  // Ein Produkt aus dem Blatt «Positionen» wieder als Eingabe (Bereich / Farbe, die es in der Liste nicht mehr gibt, als «Sonstiges»)
+  function elemFromPos(p) {
+    var z = trimmed(pv(p, 'Zimmer')), zu = trimmed(pv(p, 'Zusatzbezeichnung')), be = trimmed(pv(p, 'Bereich'));
+    if (!z && be) { z = 'Sonstiges'; zu = be; }
+    else if (z && master.zimmer.indexOf(z) < 0) { zu = be || z; z = 'Sonstiges'; }
+    var fa = trimmed(pv(p, 'Farbe')), ft = '';
+    if (fa && master.farben.indexOf(fa) < 0) { ft = fa; fa = 'Sonstige'; }
+    var lauf = trimmed(pv(p, 'Flache Laufschiene'));
+    return { id: uid(), zimmer: z, zusatz: zu, produkt: trimmed(pv(p, 'Produkt')), lauf: lauf === 'Ja' || lauf === 'Nein' ? lauf : '', farbe: fa, farbeText: ft,
+      gewebe: trimmed(pv(p, 'Gewebe')), breite: numTxt(pv(p, 'Breite cm')), hoehe: numTxt(pv(p, 'Höhe cm')), bem: trimmed(pv(p, 'Bemerkung')) };
+  }
+  // Aus dem Reiter «Aufträge»
+  function fixFromOrder(nr) {
+    var r = findOrder(nr); if (!r) return;
+    var why = fixBlock(function (n) { return ov(r, n); });
+    if (why) { fixBlockedDialog(why); return; }
+    var pos = posOf(nr);
+    if (!pos.length) { dialog('<h3>Keine Produkte</h3><p>Zu diesem Auftrag gibt es im Blatt «Positionen» keine Produkte.</p><div class="acts"><button class="btn primary" data-act="close">OK</button></div>'); return; }
+    var betrag = ov(r, 'Betrag CHF'), liste = ov(r, 'Listenpreis CHF');
+    var snap = {
+      customer: { vorname: trimmed(ov(r, 'Vorname')), nachname: trimmed(ov(r, 'Nachname')), strasse: trimmed(ov(r, 'Strasse')), plz: trimmed(ov(r, 'PLZ')),
+        ort: trimmed(ov(r, 'Ort')), telefon: trimmed(ov(r, 'Telefon')), email: trimmed(ov(r, 'E-Mail')) },
+      elements: pos.map(elemFromPos),
+      // vereinbarter Preis nur, wenn er vom Listenpreis abweicht (alte Aufträge haben keinen Listenpreis)
+      vereinbart: hasVal(liste) && hasVal(betrag) && !sameVal(liste, betrag) ? numTxt(betrag) : ''
+    };
+    var fix = { nr: nr, kind: trimmed(ov(r, 'Verkaufsart')) === 'Offerte' ? 'offerte' : 'direkt', folderUrl: trimmed(ov(r, 'Ordner-Link')), fileUrl: trimmed(ov(r, 'Dokument-Link')) };
+    function go() { ord.sel = null; $('ordDetail').hidden = true; $('ordListView').hidden = false; startFix(fix, snap); window.scrollTo(0, 0); }
+    if (captureOpen()) {
+      dialog('<h3>Erfassung ersetzen?</h3><p>Im Reiter «Erfassen» ist noch eine Erfassung offen. Sie wird gelöscht und durch ' + (fix.kind === 'direkt' ? 'den Kaufvertrag ' : 'die Offerte ') + esc(nr) + ' ersetzt.</p>' +
+        '<div class="acts"><button class="btn primary" data-act="fixGo">Ersetzen und korrigieren</button><button class="btn" data-act="close">Abbrechen</button></div>');
+      dialogActions.fixGo = go;
+    } else go();
+  }
+  // Auftragsordner finden: zuerst über die gemerkte ID, sonst über den Namen aus dem Ordner-Link
+  async function findOrderFolder(k) {
+    if (k.folderId) { try { return await graph('GET', '/me/drive/items/' + k.folderId); } catch (e) { if (e.status !== 404) throw e; } }
+    var name = ''; try { name = decodeURIComponent(trimmed(k.folderUrl).split('?')[0].split('/').pop()); } catch (e) { name = ''; }
+    if (name) { try { return await graph('GET', '/me/drive/root:/' + encPath(CONFIG.basePath + '/' + CONFIG.ordersFolder + '/' + name)); } catch (e) { if (e.status !== 404) throw e; } }
+    return null;
+  }
+  async function runCorrection(kind, signature) {
+    if (busy) return; busy = true;
+    var k = state.korrektur;
+    dialogActions.retry = function () { runSave(kind); };
+    var step = 0;
+    try {
+      if (kind !== k.kind) throw new Error('Falsche Dokumentart für diese Korrektur.');
+      if (signature) k.signature = signature;   // bleibt für einen erneuten Versuch erhalten
+      if (!k.dateIso) k.dateIso = new Date().toISOString();
+      state.korrektur = k; save();
+      var now = new Date(k.dateIso);
+      showSteps(0, '', FIX_STEPS);
+      var ta = await tableData('tblAuftraege'), H = ta.headers;
+      var row = ta.rows.filter(function (r) { return trimmed(r[H.indexOf('Auftragsnr')]) === k.nr; })[0];
+      if (!row) throw new Error('Auftrag ' + k.nr + ' wurde im Büro-Excel nicht gefunden.');
+      var why = fixBlock(function (n) { var i = H.indexOf(n); return i < 0 ? '' : row[i]; });
+      if (why) { busy = false; fixBlockedDialog(why + ' Deine Eingabe bleibt erhalten.'); return; }
+
+      step = 1; showSteps(1, '', FIX_STEPS);
+      var pos = positions(), tt = totals(), c = state.customer;
+      var pdf = await makePdf({ orderNo: k.nr, kind: kind, dateText: dateCH(now), validUntil: dateCH(addDays(now, firma().gueltigTage || 30)), customer: c, positions: pos, totals: tt,
+        signature: k.signature || null, signPlace: trimmed(c.ort) });
+      var docName = kind === 'direkt' ? 'Kaufvertrag' : 'Offerte';
+      var person = safeName([c.nachname, c.vorname].filter(Boolean).join(' ')) || 'Kunde';
+      var fileName = docName + '_' + k.nr + '_' + person.replace(/ /g, '_') + '.pdf';
+
+      step = 2; showSteps(2, '', FIX_STEPS);
+      var folder = await findOrderFolder(k), folderName = safeName(k.nr + ' ' + docName + ' ' + person);
+      if (!folder) {
+        folder = await graph('POST', '/me/drive/root:/' + encPath(CONFIG.basePath + '/' + CONFIG.ordersFolder) + ':/children',
+          { name: folderName, folder: {}, '@microsoft.graph.conflictBehavior': 'rename' });
+      } else if (folder.name !== folderName) {
+        // Name des Kunden geändert: Ordner umbenennen (gibt es den Namen schon, bleibt der alte)
+        try { folder = await graph('PATCH', '/me/drive/items/' + folder.id, { name: folderName }); } catch (e) { if (e.status !== 409) throw e; }
+      }
+      k.folderId = folder.id; state.korrektur = k; save();
+      var kids = await graph('GET', '/me/drive/items/' + folder.id + '/children');
+      var prefix = docName + '_' + k.nr + '_';
+      var old = (kids.value || []).filter(function (it) { return it.file && it.name.indexOf(prefix) === 0 && /\.pdf$/i.test(it.name); })[0];
+      var file;
+      if (old) {
+        file = await graph('PUT', '/me/drive/items/' + old.id + '/content', pdf, 'application/pdf');
+        if (old.name !== fileName) { try { file = await graph('PATCH', '/me/drive/items/' + old.id, { name: fileName }); } catch (e) { if (e.status !== 409) throw e; } }
+      } else {
+        file = await graph('PUT', '/me/drive/items/' + folder.id + ':/' + encodeURIComponent(fileName) + ':/content', pdf, 'application/pdf');
+      }
+
+      step = 3; showSteps(3, '', FIX_STEPS);
+      // Positionen ersetzen: vorhandene Zeilen überschreiben, fehlende anfügen, überzählige löschen (unten zuerst)
+      var id = await workbookId(), tp = await tableData('tblPositionen'), PH = tp.headers, iA = PH.indexOf('Auftragsnr');
+      var oldIdx = []; tp.rows.forEach(function (r, i) { if (trimmed(r[iA]) === k.nr) oldIdx.push(i); });
+      var newRows = pos.map(function (q) { return posRow(k.nr, q, PH); });
+      if (!wsIdCache.tblPositionen) { var wsP = await graph('GET', '/me/drive/items/' + id + '/workbook/tables/tblPositionen/worksheet'); wsIdCache.tblPositionen = wsP.id; }
+      for (var i = 0; i < Math.min(oldIdx.length, newRows.length); i++) {
+        var rng = await graph('GET', '/me/drive/items/' + id + '/workbook/tables/tblPositionen/rows/itemAt(index=' + oldIdx[i] + ')/range');
+        var addr = String(rng.address || '').split('!').pop();
+        if (!addr) throw new Error('Zeile im Blatt «Positionen» nicht gefunden.');
+        await graph('PATCH', '/me/drive/items/' + id + '/workbook/worksheets/' + encodeURIComponent(wsIdCache.tblPositionen) + "/range(address='" + addr + "')", { values: [newRows[i]] });
+      }
+      for (var j = oldIdx.length - 1; j >= newRows.length; j--) {
+        await graph('DELETE', '/me/drive/items/' + id + '/workbook/tables/tblPositionen/rows/itemAt(index=' + oldIdx[j] + ')');
+      }
+      if (newRows.length > oldIdx.length) await addRows('tblPositionen', newRows.slice(oldIdx.length));
+      // Auftragszeile: Kunde, Summen, Datum (die Offerte gilt ab heute), Links
+      var map = { 'Vorname': trimmed(c.vorname), 'Nachname': trimmed(c.nachname), 'Strasse': trimmed(c.strasse), 'PLZ': trimmed(c.plz), 'Ort': trimmed(c.ort),
+        'Telefon': trimmed(c.telefon), 'E-Mail': trimmed(c.email), 'Anzahl Produkte': tt.count, 'Fläche m²': tt.area, 'Betrag CHF': tt.total, 'Listenpreis CHF': tt.list,
+        'Erfasst am': excelDate(now), 'Dokument-Link': file.webUrl, 'Ordner-Link': folder.webUrl };
+      Object.keys(map).forEach(function (h) { if (H.indexOf(h) < 0) delete map[h]; });
+      await writeOrderCells(k.nr, map);
+
+      lastPdf = { blob: pdf, name: fileName };
+      busy = false;
+      finished({ orderNo: k.nr, kind: kind, fileUrl: file.webUrl, folderUrl: folder.webUrl, name: [c.vorname, c.nachname].filter(Boolean).join(' '), phone: trimmed(c.telefon), totals: tt,
+        title: 'Korrigiert: ' + k.nr, note: 'Das PDF in OneDrive ist ersetzt, der Auftrag im Büro-Excel ist aktualisiert. Die Nummer bleibt ' + k.nr + '.',
+        fix: { nr: k.nr, kind: kind, folderId: folder.id, folderUrl: folder.webUrl, fileUrl: file.webUrl, snap: captureSnapshot() } });
+    } catch (e) {
+      busy = false;
+      if (e && e.errorCode === 'interaction_in_progress') return;
+      showSteps(step, (e && e.message) || String(e), FIX_STEPS);
+    }
+  }
+
   // Telefonnummer für WhatsApp ins internationale Format ohne + bringen: 079 123 45 67 → 41791234567
   function waNumber(tel) {
     var t = String(tel || '').trim().replace(/[\s\-\/().]/g, '');
@@ -1659,10 +1929,75 @@ textarea.in { min-height: 64px; resize: vertical; }
       (waHref ? '<a class="btn primary" href="' + esc(waHref) + '" data-act="waDone">① WhatsApp an ' + esc(r.phone) + '</a>' : '') +
       (lastPdf && !r.already ? '<button class="btn' + (waHref ? '' : ' primary') + '" data-act="share">' + (waHref ? '② ' : '') + 'PDF an Kunden senden …</button>' : '') +
       (r.fileUrl ? '<a class="btn" href="' + esc(r.fileUrl) + '" target="_blank" rel="noopener">PDF in OneDrive öffnen</a>' : '') +
+      (r.fix && !r.already ? '<button class="btn" data-act="fixAgain">' + doc + ' korrigieren</button>' : '') +
       '<button class="btn" data-act="close">Fertig</button></div>');
+    // Etwas vergessen? Kunde und Produkte wieder laden, gleiche Nummer
+    dialogActions.fixAgain = function () { if (r.fix) startFix(r.fix, r.fix.snap); };
   }
   $('btnOfferte').addEventListener('click', function () { startClose('offerte'); });
   $('btnDirekt').addEventListener('click', function () { startClose('direkt'); });
+
+  // ---- Vorschau: PDF der aktuellen Eingabe als «Entwurf» zeigen, nichts speichern (keine Nummer, kein Excel, kein OneDrive) ----
+  var PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', pdfjsP = null, pvUrl = null;
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (!pdfjsP) pdfjsP = new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = PDFJS_URL;
+      s.onload = function () {
+        if (!window.pdfjsLib) { pdfjsP = null; rej(new Error('PDF-Anzeige fehlt')); return; }
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_URL.replace('pdf.min.js', 'pdf.worker.min.js'); res(window.pdfjsLib);
+      };
+      s.onerror = function () { pdfjsP = null; rej(new Error('PDF-Anzeige nicht geladen')); };
+      document.head.appendChild(s);
+    });
+    return pdfjsP;
+  }
+  function closePreview() { $('pv').hidden = true; $('pvPages').innerHTML = ''; document.body.classList.remove('locked'); }
+  $('pvBack').addEventListener('click', closePreview);
+  async function showPreview(kind) {
+    if (!state.elements.length) {
+      dialog('<h3>Keine Produkte</h3><p>Erfasse zuerst mindestens ein Produkt.</p><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
+      return;
+    }
+    var doc = kind === 'direkt' ? 'Kaufvertrag' : 'Offerte', blob;
+    dialog('<h3>Vorschau</h3><p>Wird erstellt …</p>');
+    try {
+      var now = new Date(), c = state.customer;
+      blob = await makePdf({ orderNo: 'Entwurf', kind: kind, dateText: dateCH(now), validUntil: dateCH(addDays(now, firma().gueltigTage || 30)), customer: c,
+        positions: positions(), totals: totals(), signature: null, signPlace: trimmed(c.ort) });
+    } catch (e) {
+      dialog('<h3>PDF-Fehler</h3><div class="err-box">' + esc(e.message || String(e)) + '</div><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
+      return;
+    }
+    if (pvUrl) URL.revokeObjectURL(pvUrl);
+    pvUrl = URL.createObjectURL(blob);
+    try {
+      var lib = await loadPdfJs();
+      var pdf = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+      closeDialog();
+      var box = $('pvPages'); box.innerHTML = '<p class="fine">Wird angezeigt …</p>';
+      $('pvTitle').textContent = doc + ', Entwurf'; $('pv').hidden = false; document.body.classList.add('locked'); box.scrollTop = 0;
+      // Seiten doppelt so fein wie die Bildschirmbreite zeichnen, damit Vergrössern mit zwei Fingern scharf bleibt
+      var px = Math.min((box.clientWidth - 24) * (window.devicePixelRatio || 1) * 2, 2000);
+      for (var i = 1; i <= pdf.numPages; i++) {
+        var page = await pdf.getPage(i), vp = page.getViewport({ scale: px / page.getViewport({ scale: 1 }).width });
+        var cv = document.createElement('canvas'); cv.className = 'pv-page'; cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+        cv.setAttribute('aria-label', doc + ' Seite ' + i);
+        await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        if (i === 1) box.innerHTML = '';
+        if ($('pv').hidden) break;   // inzwischen geschlossen
+        box.appendChild(cv);
+      }
+      pdf.destroy();
+    } catch (e) {
+      // Ohne PDF-Anzeige: PDF direkt öffnen (wie beim Muster-PDF)
+      closePreview();
+      dialog('<h3>Vorschau</h3><p>Der Entwurf ist bereit. Er ist nicht gespeichert.</p><div class="acts">' +
+        '<a class="btn primary" href="' + pvUrl + '" target="_blank" rel="noopener">' + doc + ' (Entwurf) öffnen</a><button class="btn" data-act="close">Schliessen</button></div>');
+    }
+  }
+  $('pvOfferte').addEventListener('click', function () { showPreview('offerte'); });
+  $('pvDirekt').addEventListener('click', function () { showPreview('direkt'); });
 
   // ================= Reiter «Aufträge» =================
   // Liest Aufträge und Positionen aus dem Büro-Excel. Die Liste zeigt offene Aufträge (dringendste zuerst),
@@ -1850,6 +2185,8 @@ textarea.in { min-height: 64px; resize: vertical; }
       '<div class="d-row"><span>Betrag</span><span class="v">CHF ' + fmt2.format(Number(ov(r, 'Betrag CHF')) || 0) + '</span></div>' +
       ((doc || dir) ? '<div class="d-links">' + (doc ? '<a class="btn" href="' + esc(doc) + '" target="_blank" rel="noopener">PDF öffnen</a>' : '') +
         (dir ? '<a class="btn" href="' + esc(dir) + '" target="_blank" rel="noopener">Ordner öffnen</a>' : '') + '</div>' : '') +
+      // Korrigieren nur, solange die Offerte offen bzw. der Kaufvertrag nicht bestellt ist
+      (!fixBlock(function (n) { return ov(r, n); }) ? '<div class="d-links"><button class="btn" data-ordact="fix">' + (offerte ? 'Offerte' : 'Kaufvertrag') + ' korrigieren</button></div>' : '') +
       '</div></section>';
 
     // Produkte aus dem Blatt «Positionen»: pro Produkt Bereich als Titel, darunter Bezeichnung links, Wert rechts.
@@ -2002,9 +2339,17 @@ textarea.in { min-height: 64px; resize: vertical; }
     if (!m) throw new Error('Zeile im Büro-Excel nicht gefunden.');
     var c0 = colNum(m[1]), row = Number(m[2]);
     if (!wsIdCache[table]) { var ws = await graph('GET', '/me/drive/items/' + id + '/workbook/tables/' + table + '/worksheet'); wsIdCache[table] = ws.id; }
-    for (var k in map) {
+    // Nebeneinanderliegende Spalten in einem Aufruf schreiben (Formelspalten dazwischen bleiben unberührt)
+    var cells = Object.keys(map).map(function (k) {
       var j = H.indexOf(k); if (j < 0) throw new Error('Spalte «' + k + '» fehlt im Büro-Excel.');
-      await graph('PATCH', '/me/drive/items/' + id + '/workbook/worksheets/' + encodeURIComponent(wsIdCache[table]) + "/range(address='" + colName(c0 + j) + row + "')", { values: [[map[k]]] });
+      return [j, map[k]];
+    }).sort(function (a, b) { return a[0] - b[0]; });
+    for (var s = 0; s < cells.length;) {
+      var e = s; while (e + 1 < cells.length && cells[e + 1][0] === cells[e][0] + 1) e++;
+      var addr = colName(c0 + cells[s][0]) + row + (e > s ? ':' + colName(c0 + cells[e][0]) + row : '');
+      await graph('PATCH', '/me/drive/items/' + id + '/workbook/worksheets/' + encodeURIComponent(wsIdCache[table]) + "/range(address='" + addr + "')",
+        { values: [cells.slice(s, e + 1).map(function (x) { return x[1]; })] });
+      s = e + 1;
     }
   }
   function writeOrderCells(nr, map) { return writeRowCells('tblAuftraege', 'Auftragsnr', nr, map); }
@@ -2509,6 +2854,7 @@ textarea.in { min-height: 64px; resize: vertical; }
     else if (act === 'reject') rejectDialog(nr, false);
     else if (act === 'offerEdit') rejectDialog(nr, true);
     else if (act === 'cost') costDialog(nr);
+    else if (act === 'fix') fixFromOrder(nr);
     else if (act === 'invoice') invoiceDialog(nr);
     else if (act === 'dun') dunDialog(nr, Number(b.dataset.s));
     else if (act === 'gFold') { ord.gOpen = !ord.gOpen; renderDetail(); }
