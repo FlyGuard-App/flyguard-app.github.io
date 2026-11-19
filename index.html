@@ -124,6 +124,7 @@ textarea.in { min-height: 64px; resize: vertical; }
 .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; width: 156px; flex: none; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-ctl); }
 .seg button { min-height: 40px; border: 0; border-radius: 9px; background: transparent; font: inherit; font-size: 16px; font-weight: 600; color: var(--muted); cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--primary); color: var(--primary-fg); }
+.seg.seg3 { width: 100%; grid-template-columns: repeat(3, 1fr); }
 .meta { font-size: 13.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .meta b { color: var(--fg); font-weight: 600; }
 .pform { display: flex; flex-direction: column; gap: 12px; border-radius: 16px; scroll-margin-top: calc(80px + env(safe-area-inset-top, 0px)); }
@@ -404,11 +405,13 @@ textarea.in { min-height: 64px; resize: vertical; }
     <div class="card-b" id="sumBody">
       <div class="kv"><span>Produkte</span><span class="v" id="sCount">0</span></div>
       <div class="kv"><span>Gesamtfläche</span><span class="v" id="sArea">0.00 m²</span></div>
-      <div class="kv" id="sListRow" hidden><span>Preis laut Liste</span><span class="v" id="sList">CHF 0.00</span></div>
-      <div class="kv total"><span>Gesamtpreis</span><span class="v" id="sTotal">CHF 0.00</span></div>
-      <!-- Mit dem Kunden ausgehandelter Preis: gilt dann als Gesamtpreis (Positionen werden anteilig angepasst) -->
-      <div class="field"><label for="sVereinbart">Vereinbarter Preis <i>(optional)</i></label><div class="unit chf"><input class="in" id="sVereinbart" inputmode="decimal" autocomplete="off" enterkeyhint="done"><span>CHF</span></div></div>
+      <!-- Preisart: Liste (Preisraster), Pro m² (Gesamtfläche × Preis pro m² aus Excel) oder Vereinbart (mit dem Kunden ausgehandelt).
+           Bei Pro m² und Vereinbart zeigen die Dokumente keine Einzelpreise, nur den Gesamtbetrag. -->
+      <div class="field"><label id="preisLbl">Preis</label><div class="seg seg3" id="preisSeg" role="group" aria-labelledby="preisLbl"><button type="button" data-pa="liste" aria-pressed="true">Liste</button><button type="button" data-pa="m2" aria-pressed="false">Pro m²</button><button type="button" data-pa="vereinbart" aria-pressed="false">Vereinbart</button></div></div>
+      <div class="kv" id="sM2Row" hidden><span>Preis pro m²</span><span class="v" id="sM2">CHF 0.00</span></div>
+      <div class="field" id="sVerField" hidden><label for="sVereinbart">Vereinbarter Preis</label><div class="unit chf"><input class="in" id="sVereinbart" inputmode="decimal" autocomplete="off" enterkeyhint="done"><span>CHF</span></div></div>
       <div class="hint" id="hVereinbart"></div>
+      <div class="kv total"><span>Gesamtpreis</span><span class="v" id="sTotal">CHF 0.00</span></div>
     </div>
   </section>
 
@@ -492,7 +495,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       { name: 'Plissee zweiflügelig', beschreibung: 'Mit Magnetverschluss', lauf: true }, { name: 'Plissee zweiflügelig, Mitte schliessend', beschreibung: 'Mit Magnetverschluss', lauf: true }],
     farben: ['Weiss', 'Anthrazit', 'Sonstige'],
     gewebe: ['Normal', 'Pollenschutz'],
-    firma: { firma: 'FlyGuard Arifi', strasse: 'Rebrainstrasse 17', plzOrt: '8106 Adlikon b. Regensdorf', telefon: '076 419 40 47', email: 'info@flyguard.ch', web: '', uid: 'CHE-225.710.567', gueltigTage: 30, zahlungsfrist: 30, garantieJahre: 2, mahnAbstand: 10,
+    firma: { firma: 'FlyGuard Arifi', strasse: 'Rebrainstrasse 17', plzOrt: '8106 Adlikon b. Regensdorf', telefon: '076 419 40 47', email: 'info@flyguard.ch', web: '', uid: 'CHE-225.710.567', gueltigTage: 30, zahlungsfrist: 30, garantieJahre: 2, mahnAbstand: 10, preisM2: 100,
       // Bankangaben für den QR-Zahlteil kommen nur aus dem Büro-Excel (Blatt «Einstellungen»), nie aus dem Code
       iban: '', kontoinhaber: '', kontoStrasse: '', kontoPlzOrt: '' },
     regeln: { fenster: { abHoehe: 0, aufB: 20, aufH: 15, rund: 5 }, tuer: { abHoehe: 200, aufB: 37.5, aufH: 15, rund: 5 } },
@@ -501,7 +504,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       tuer: makeGrid(range(80, 200), range(200, 260), function (w, h) { return 500 + 37.5 * (w - 90) / 10 + 15 * (h - 210) / 10; })
     }
   };
-  var APP_VERSION = '18.11.2026 · 8b';
+  var APP_VERSION = '19.11.2026 · 8c';
   var KEY_STATE = 'flyguard-erfassung-v1', KEY_MASTER = 'flyguard-stammdaten-v2';
   // «lauf» (flache Laufschiene: 'Ja' / 'Nein' / '') hat kein Eingabefeld, sondern den Ja/Nein-Schalter
   // Tiefe wird seit 7h nicht mehr erfasst (alte Aufträge behalten ihre Tiefe im Excel)
@@ -603,8 +606,9 @@ textarea.in { min-height: 64px; resize: vertical; }
     return { zimmer: '', zusatz: '', produkt: carry ? carry.produkt : '', lauf: carry ? (carry.lauf || '') : '', farbe: carry ? carry.farbe : '', farbeText: carry ? (carry.farbeText || '') : '',
       gewebe: carry && carry.gewebe ? carry.gewebe : (master.gewebe[0] || ''), breite: '', hoehe: '', bem: '' };
   }
-  // vereinbart = mit dem Kunden ausgehandelter Preis (Text wie eingetippt); korrektur = gespeicherter Auftrag, der gerade korrigiert wird
-  function emptyState() { return { captureId: uid(), startedAt: new Date().toISOString(), custOpen: true, prodOpen: true, sumOpen: true, decOpen: true, editId: null, stash: null, customer: {}, elements: [], form: emptyForm(null), pending: null, vereinbart: '', korrektur: null }; }
+  // preisart = 'liste' | 'm2' | 'vereinbart'; vereinbart = mit dem Kunden ausgehandelter Preis (Text wie eingetippt);
+  // korrektur = gespeicherter Auftrag, der gerade korrigiert wird
+  function emptyState() { return { captureId: uid(), startedAt: new Date().toISOString(), custOpen: true, prodOpen: true, sumOpen: true, decOpen: true, editId: null, stash: null, customer: {}, elements: [], form: emptyForm(null), pending: null, preisart: 'liste', vereinbart: '', korrektur: null }; }
   // Ist im Reiter «Erfassen» etwas offen, das beim Laden eines anderen Auftrags verloren ginge?
   function captureOpen() {
     var c = state.customer || {};
@@ -770,23 +774,43 @@ textarea.in { min-height: 64px; resize: vertical; }
     var v = parseAgreed(state.vereinbart);
     return v == null ? { bad: true } : { ok: true, val: v };
   }
-  // Positionen mit gerundeten Werten (so wie auf dem Dokument). Mit vereinbartem Preis werden die Positionspreise
-  // anteilig darauf verteilt: ganze Franken (bei Rappen im vereinbarten Preis auf 5 Rappen), der Rest kommt auf die
-  // teuerste Position. So ergeben die Positionen genau den vereinbarten Preis, ohne Zeile «Rabatt».
+  // Preisart der Erfassung: 'liste' (Preisraster), 'm2' (Gesamtfläche × Preis pro m²) oder 'vereinbart'
+  function preisart() { return state.preisart === 'm2' || state.preisart === 'vereinbart' ? state.preisart : 'liste'; }
+  // Preis pro m² aus dem Büro-Excel (Blatt «Einstellungen», «Preis pro m² CHF»), sonst der Standardwert
+  function m2Rate() { var v = Number(firma().preisM2); return v > 0 ? v : DEFAULTS.firma.preisM2; }
+  var PA_LABEL = { liste: 'Liste', m2: 'Pro m²', vereinbart: 'Vereinbart' };
+  // Positionen mit gerundeten Werten (so wie auf dem Dokument). Bei «Pro m²» und «Vereinbart» wird der Gesamtpreis
+  // auf die Positionen verteilt (Pro m² nach Fläche, Vereinbart nach Listenpreis): ganze Franken (bei Rappen im
+  // Gesamtpreis auf 5 Rappen), der Rest kommt auf die grösste Position. So ergeben die Positionen genau den
+  // Gesamtpreis, ohne Zeile «Rabatt». Die Einzelpreise sind dann nur intern (Excel), die Dokumente zeigen sie nicht.
+  // ps.art = tatsächliche Preisart ('liste', wenn z. B. kein gültiger vereinbarter Preis eingetragen ist)
   function positions() {
-    var ps = listPositions(), a = agreedInfo();
-    if (!a.ok) return ps;
-    var priced = ps.filter(function (p) { return p.price != null; });
-    var list = priced.reduce(function (s, p) { return s + p.price; }, 0);
-    if (!priced.length || !(list > 0)) return ps;
-    var aC = Math.round(a.val * 100), steps = aC % 100 === 0 ? [100, 5, 1] : aC % 5 === 0 ? [5, 1] : [1];
+    var ps = listPositions(), pa = preisart(), a = agreedInfo();
+    ps.art = 'liste';
+    // Pro m²: alle Produkte mit Massen; Vereinbart: alle mit Listenpreis
+    var priced = ps.filter(function (p) { return p.area > 0 && (pa === 'm2' || p.price > 0); });
+    if (!priced.length || pa === 'liste' || (pa === 'vereinbart' && !a.ok)) return ps;
+    var target, weight;
+    if (pa === 'm2') {
+      var area = round(priced.reduce(function (s, p) { return s + p.area; }, 0), 2);
+      target = Math.round(area * m2Rate() * 20) / 20;
+      weight = function (p) { return p.area; };
+      ps.rate = m2Rate();
+    } else {
+      target = a.val;
+      weight = function (p) { return p.price; };
+    }
+    var W = priced.reduce(function (s, p) { return s + weight(p); }, 0);
+    if (!(W > 0) || !(target > 0)) return ps;
+    var aC = Math.round(target * 100), steps = aC % 100 === 0 ? [100, 5, 1] : aC % 5 === 0 ? [5, 1] : [1];
     for (var k = 0; k < steps.length; k++) {
       var st = steps[k], sum = 0, big = null;
-      priced.forEach(function (p) { p.cents = Math.round(p.price * aC / list / st) * st; sum += p.cents; if (!big || p.price > big.price) big = p; });
+      priced.forEach(function (p) { p.cents = Math.round(weight(p) * aC / W / st) * st; sum += p.cents; if (!big || weight(p) > weight(big)) big = p; });
       big.cents += aC - sum;
       if (big.cents >= 0) break;   // nur bei sehr kleinen Beträgen nötig: feiner runden
     }
-    priced.forEach(function (p) { p.listPrice = p.price; p.price = p.cents / 100; delete p.cents; });
+    priced.forEach(function (p) { p.listPrice = p.price; p.price = p.cents / 100; delete p.cents; if (pa === 'm2') p.m2 = ps.rate; });
+    ps.art = pa;
     return ps;
   }
   function listPositions() {
@@ -800,26 +824,36 @@ textarea.in { min-height: 64px; resize: vertical; }
         art: c.r ? c.r.art : '', feld: c.r ? c.r.feld : '', outside: !!(c.r && c.r.outside) };
     });
   }
-  // total = Gesamtpreis (vereinbart oder laut Liste), list = Preis laut Liste
+  // total = Gesamtpreis, list = Preis laut Liste, art = Preisart fürs Excel ('Liste', 'Pro m²', 'Vereinbart'),
+  // hide = Dokumente ohne Einzelpreise (nur Gesamtbetrag)
   function totals() {
-    var area = 0, total = 0, list = 0;
-    positions().forEach(function (p) {
+    var area = 0, total = 0, list = 0, ps = positions();
+    ps.forEach(function (p) {
       if (p.area != null) area += p.area;
-      if (p.price != null) { total += p.price; list += p.listPrice != null ? p.listPrice : p.price; }
+      if (p.price != null) total += p.price;
+      var lp = Object.prototype.hasOwnProperty.call(p, 'listPrice') ? p.listPrice : p.price;
+      if (lp != null) list += lp;
     });
-    return { count: state.elements.length, area: round(area, 4), total: round(total, 2), list: round(list, 2) };
+    return { count: state.elements.length, area: round(area, 4), total: round(total, 2), list: round(list, 2), art: PA_LABEL[ps.art], hide: ps.art !== 'liste', rate: ps.rate || null };
   }
   function renderSummary() {
-    var t = totals(), a = agreedInfo(), inp = $('sVereinbart');
+    var t = totals(), a = agreedInfo(), pa = preisart(), inp = $('sVereinbart');
     $('sCount').textContent = t.count; $('sArea').textContent = fmt2.format(t.area) + ' m²'; $('sTotal').textContent = 'CHF ' + fmt2.format(t.total);
-    var typing = document.activeElement === inp, bad = a.bad && !typing;   // Fehler erst nach dem Tippen zeigen
+    Array.prototype.forEach.call($('preisSeg').querySelectorAll('button'), function (b) { b.setAttribute('aria-pressed', b.dataset.pa === pa ? 'true' : 'false'); });
+    $('sM2Row').hidden = pa !== 'm2'; $('sM2').textContent = 'CHF ' + fmt2.format(m2Rate());
+    $('sVerField').hidden = pa !== 'vereinbart';
+    var typing = document.activeElement === inp, bad = pa === 'vereinbart' && a.bad && !typing;   // Fehler erst nach dem Tippen zeigen
     if (!typing) inp.value = state.vereinbart || '';
-    $('sListRow').hidden = !a.ok; $('sList').textContent = 'CHF ' + fmt2.format(t.list);
     inp.classList.toggle('err', !!bad);
     $('hVereinbart').textContent = bad ? 'Bitte einen Betrag eingeben, z. B. 1150 oder 1150.50. Bis dahin gilt der Preis laut Liste.'
-      : (a.ok && !(t.list > 0)) ? 'Gilt, sobald ein Produkt mit Massen erfasst ist.' : '';
+      : ((pa === 'm2' || (pa === 'vereinbart' && a.ok)) && !t.hide) ? 'Gilt, sobald ein Produkt mit Massen erfasst ist.' : '';
     $('srcInfo').textContent = 'Preisraster und Listen: ' + (master.source === 'Excel' ? 'aus Excel, geladen ' + master.loadedAt : 'Standardwerte (noch nicht aus Excel geladen)') + ' · App-Version ' + APP_VERSION;
   }
+  $('preisSeg').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-pa]'); if (!b) return;
+    state.preisart = b.dataset.pa; renderSummary(); save();
+    if (state.preisart === 'vereinbart' && !trimmed(state.vereinbart)) $('sVereinbart').focus();
+  });
   $('sVereinbart').addEventListener('input', function () { state.vereinbart = this.value; renderSummary(); save(); });
   $('sVereinbart').addEventListener('blur', function () { renderSummary(); });
   $('sVereinbart').addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.keyCode === 13) { ev.preventDefault(); this.blur(); } });
@@ -867,11 +901,11 @@ textarea.in { min-height: 64px; resize: vertical; }
   // Muster-PDF: zeigt das Layout mit den aktuellen Eingaben (oder Beispieldaten), ohne etwas zu speichern
   $('mPreview').addEventListener('click', async function () {
     toggleMenu(false);
-    var saved = state.elements, cust = state.customer, savedV = state.vereinbart;
+    var saved = state.elements, cust = state.customer, savedV = state.vereinbart, savedPa = state.preisart;
     dialog('<h3>Muster-PDF</h3><p>Wird erstellt …</p>');
     try {
       if (!state.elements.length) {
-        state.vereinbart = '';   // Beispieldaten immer zum Preis laut Liste
+        state.vereinbart = ''; state.preisart = 'liste';   // Beispieldaten immer zum Preis laut Liste
         var pr = master.produkte, gw = master.gewebe;
         state.elements = [
           { id: 'm1', zimmer: 'Schlafzimmer', zusatz: '', produkt: pr[0].name, lauf: 'Nein', farbe: master.farben[0], gewebe: gw[0], breite: '120', hoehe: '140', bem: '' },
@@ -881,7 +915,7 @@ textarea.in { min-height: 64px; resize: vertical; }
         if (!trimmed(cust.nachname)) cust = { vorname: 'Anna', nachname: 'Muster', strasse: 'Musterweg 12', plz: '8000', ort: 'Zürich', telefon: '079 123 45 67' };
       }
       var pos = positions(), tot = totals(), now = new Date();
-      state.elements = saved; state.vereinbart = savedV;
+      state.elements = saved; state.vereinbart = savedV; state.preisart = savedPa;
       var base = { orderNo: 'MUSTER', dateText: dateCH(now), validUntil: dateCH(addDays(now, firma().gueltigTage || 30)), customer: cust, signPlace: trimmed(cust.ort), positions: pos, totals: tot };
       // Beispiel-Unterschrift, damit man sieht, wo sie im Vertrag erscheint
       var cv = document.createElement('canvas'); cv.width = 600; cv.height = 220;
@@ -908,7 +942,7 @@ textarea.in { min-height: 64px; resize: vertical; }
         '<button class="btn" data-act="close">Schliessen</button></div>' +
         (pay.err ? '<p class="fine">Rechnung und Mahnung: ' + esc(pay.err) + '</p>' : ''));
     } catch (e) {
-      state.elements = saved; state.vereinbart = savedV;
+      state.elements = saved; state.vereinbart = savedV; state.preisart = savedPa;
       dialog('<h3>PDF-Fehler</h3><div class="err-box">' + esc(e.message || String(e)) + '</div><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
     }
   });
@@ -1042,6 +1076,7 @@ textarea.in { min-height: 64px; resize: vertical; }
         if (Number(map['offerte gültig tage']) > 0) fa.gueltigTage = Number(map['offerte gültig tage']);
         if (Number(map['zahlungsfrist tage']) > 0) fa.zahlungsfrist = Number(map['zahlungsfrist tage']);
         if (Number(map['garantie jahre']) > 0) fa.garantieJahre = Number(map['garantie jahre']);
+        var m2 = parseAgreed(map['preis pro m² chf']); if (m2) fa.preisM2 = m2;
       } catch (e) { /* Einstellungen fehlen: Standardwerte */ }
       master = { produkte: produkte, farben: farben, gewebe: gewebe, zimmer: zimmer, regeln: regeln, raster: raster, firma: fa, source: 'Excel', loadedAt: new Date().toLocaleString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) };
       store(KEY_MASTER, master); fillSelects(); renderAll(true);
@@ -1238,22 +1273,28 @@ textarea.in { min-height: 64px; resize: vertical; }
       : isB ? 'Vielen Dank für Ihren Auftrag vom ' + o.dateText + '. Wir bestätigen Ihnen folgende Insektenschutz-Elemente nach Mass gemäss unserer Offerte vom ' + o.offerDate + ':'
       : 'Gerne offerieren wir Ihnen folgende Insektenschutz-Elemente nach Mass gemäss Aufmass vom ' + o.dateText + ':';
     var tableTop = lines(wrap(introText), L, y + 7) + 8;       // letzte Zeile + eine Leerzeile
+    // Pro m² und Vereinbart: keine Einzelpreise, nur der Gesamtbetrag unter der Tabelle
+    var noPrices = !!(o.totals && o.totals.hide);
     var body = o.positions.map(function (p) {
       var masse = fmt2.format(p.breite).replace(/\.00$/, '') + ' × ' + fmt2.format(p.hoehe).replace(/\.00$/, '') + (p.tiefe != null ? '\nTiefe ' + fmt2.format(p.tiefe).replace(/\.00$/, '') : '');
       // Produkt (mit flacher Laufschiene), Beschreibung, Gewebe und Farbe je auf eigener Zeile
       var prod = p.produkt + (p.lauf === 'Ja' ? ', flache Laufschiene' : '') + (p.beschreibung ? '\n' + p.beschreibung : '') +
         (p.gewebe ? '\nGewebe: ' + p.gewebe : '') + '\nFarbe: ' + p.farbe;
-      return [String(p.pos), p.bereich + (p.bem ? '\n' + p.bem : ''), prod, p.art, masse, fmt2.format(p.price)];
+      var row = [String(p.pos), p.bereich + (p.bem ? '\n' + p.bem : ''), prod, p.art, masse];
+      if (!noPrices) row.push(fmt2.format(p.price));
+      return row;
     });
+    var colSt = { 0: { cellWidth: 12 }, 1: { cellWidth: 36 }, 3: { cellWidth: 20 }, 4: { halign: 'right', cellWidth: 24 } };
+    if (!noPrices) colSt[5] = { halign: 'right', cellWidth: 24 };
     doc.autoTable({
       startY: tableTop, margin: { left: L, right: 210 - R, bottom: 22 },
-      head: [['Pos', 'Bereich', 'Produkt', 'Art', 'B × H cm', 'Betrag CHF']],
+      head: [noPrices ? ['Pos', 'Bereich', 'Produkt', 'Art', 'B × H cm'] : ['Pos', 'Bereich', 'Produkt', 'Art', 'B × H cm', 'Betrag CHF']],
       body: body,
-      foot: [['', 'Total', '', '', '', { content: fmt2.format(o.totals.total), styles: { halign: 'right' } }]],
+      foot: noPrices ? [] : [['', 'Total', '', '', '', { content: fmt2.format(o.totals.total), styles: { halign: 'right' } }]],
       styles: { font: F, fontStyle: 'normal', fontSize: 9, cellPadding: 2.2, valign: 'top', textColor: INK, lineColor: LINE, lineWidth: 0.1 },
       headStyles: { fillColor: NAVY, textColor: 255, font: F, fontStyle: 'bold' },
       footStyles: { fillColor: [232, 235, 243], textColor: NAVY, font: F, fontStyle: 'bold' },
-      columnStyles: { 0: { cellWidth: 12 }, 1: { cellWidth: 36 }, 3: { cellWidth: 20 }, 4: { halign: 'right', cellWidth: 24 }, 5: { halign: 'right', cellWidth: 24 } }
+      columnStyles: colSt
     });
     // Direkt unter der Tabelle rechts: Gesamtbetrag
     y = doc.lastAutoTable.finalY + 7.3;
@@ -1445,9 +1486,12 @@ textarea.in { min-height: 64px; resize: vertical; }
     if (bad.length) warn.push(bad.length + (bad.length === 1 ? ' Produkt ist' : ' Produkte sind') + ' unvollständig');
     if (state.editId) warn.push('Ein Produkt ist noch in Bearbeitung (nicht gespeichert)');
     else if (formHasInput(state.form)) warn.push('Im Formular steht ein angefangenes Produkt, das noch nicht hinzugefügt ist');
-    var ag = agreedInfo(), tl = totals();
-    if (ag.bad) warn.push('Der vereinbarte Preis ist keine gültige Zahl, es gilt der Preis laut Liste');
-    else if (ag.ok && ag.val > tl.list && tl.list > 0) warn.push('Der vereinbarte Preis ist höher als der Preis laut Liste (CHF ' + fmt2.format(tl.list) + ')');
+    if (preisart() === 'vereinbart') {
+      var ag = agreedInfo(), tl = totals();
+      if (ag.empty) warn.push('Kein vereinbarter Preis eingetragen, es gilt der Preis laut Liste');
+      else if (ag.bad) warn.push('Der vereinbarte Preis ist keine gültige Zahl, es gilt der Preis laut Liste');
+      else if (ag.val > tl.list && tl.list > 0) warn.push('Der vereinbarte Preis ist höher als der Preis laut Liste (CHF ' + fmt2.format(tl.list) + ')');
+    }
     if (!state.elements.length) {
       dialog('<h3>Keine Produkte</h3><p>Erfasse zuerst mindestens ein Produkt.</p><div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
       return;
@@ -1636,19 +1680,20 @@ textarea.in { min-height: 64px; resize: vertical; }
     dialog(html);
   }
 
-  // Zeile für tblPositionen nach Spaltenname (Preis pro m² bleibt leer, der Preis kommt aus dem Raster bzw. dem vereinbarten Preis)
+  // Zeile für tblPositionen nach Spaltenname (Preis pro m² nur bei Preisart «Pro m²», sonst kommt der Preis aus dem Raster
+  // bzw. dem vereinbarten Preis)
   function posRow(nr, q, PH) {
     var pr = {
       'Auftragsnr': nr, 'Pos': q.pos, 'Zimmer': q.zimmer, 'Zusatzbezeichnung': q.zusatz, 'Bereich': q.bereich, 'Produkt': q.produkt,
       'Flache Laufschiene': q.lauf, 'Farbe': q.farbe, 'Gewebe': q.gewebe, 'Breite cm': q.breite, 'Höhe cm': q.hoehe, 'Tiefe cm': q.tiefe == null ? '' : q.tiefe,
-      'Fläche m²': q.area, 'Preis pro m²': '', 'Preis CHF': q.price, 'Bemerkung': q.bem, 'Art': q.art, 'Rasterfeld': q.feld,
+      'Fläche m²': q.area, 'Preis pro m²': q.m2 != null ? q.m2 : '', 'Preis CHF': q.price, 'Bemerkung': q.bem, 'Art': q.art, 'Rasterfeld': q.feld,
       'Preishinweis': q.outside ? 'ausserhalb Raster – bitte prüfen' : ''
     };
     return PH.map(function (h) { return Object.prototype.hasOwnProperty.call(pr, h) ? pr[h] : null; });
   }
   // Stand der Erfassung beim Speichern, damit «korrigieren» im Fenster danach alles wieder laden kann
   function captureSnapshot() {
-    return JSON.parse(JSON.stringify({ customer: state.customer, elements: state.elements, vereinbart: state.vereinbart || '' }));
+    return JSON.parse(JSON.stringify({ customer: state.customer, elements: state.elements, preisart: preisart(), vereinbart: state.vereinbart || '' }));
   }
 
   async function runSave(kind, signature) {
@@ -1705,7 +1750,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       var rec = {
         'Auftragsnr': p.orderNo, 'Jahr': p.year, 'LaufNr': p.laufNr, 'Erfasst am': serial, 'Verkaufsart': kind === 'direkt' ? 'Direktbestellung' : 'Offerte',
         'Vorname': trimmed(c.vorname), 'Nachname': trimmed(c.nachname), 'Strasse': trimmed(c.strasse), 'PLZ': trimmed(c.plz), 'Ort': trimmed(c.ort),
-        'Telefon': trimmed(c.telefon), 'E-Mail': trimmed(c.email), 'Anzahl Produkte': tt.count, 'Fläche m²': tt.area, 'Betrag CHF': tt.total, 'Listenpreis CHF': tt.list,
+        'Telefon': trimmed(c.telefon), 'E-Mail': trimmed(c.email), 'Anzahl Produkte': tt.count, 'Fläche m²': tt.area, 'Betrag CHF': tt.total, 'Listenpreis CHF': tt.list, 'Preisart': tt.art,
         'Dokument': docName, 'Dokument-Link': p.fileUrl, 'Ordner-Link': p.folderUrl,
         'Offertenstatus': kind === 'direkt' ? 'Keine Offerte – Direktbestellung' : 'Offen', 'Erfassungs-ID': state.captureId
       };
@@ -1748,10 +1793,11 @@ textarea.in { min-height: 64px; resize: vertical; }
     dialog('<h3>Korrigieren nicht möglich</h3><p>' + esc(why) + ' Korrigieren geht nur, solange die Offerte offen ist bzw. der Kaufvertrag noch nicht bestellt ist.</p>' +
       '<div class="acts"><button class="btn primary" data-act="close">OK</button></div>');
   }
-  // Korrektur in «Erfassen» starten: Kunde, Produkte und vereinbarten Preis laden
+  // Korrektur in «Erfassen» starten: Kunde, Produkte, Preisart und vereinbarten Preis laden
   function startFix(fix, snap) {
     state = emptyState(); touched = {};
     state.customer = snap.customer || {}; state.elements = snap.elements || []; state.vereinbart = snap.vereinbart || '';
+    state.preisart = snap.preisart || (trimmed(state.vereinbart) ? 'vereinbart' : 'liste');
     state.form = blankForm();
     state.korrektur = { nr: fix.nr, kind: fix.kind, folderId: fix.folderId || null, folderUrl: fix.folderUrl || '', fileUrl: fix.fileUrl || '' };
     closeDialog(); renderAll(true); showTab('erfassen');
@@ -1775,13 +1821,16 @@ textarea.in { min-height: 64px; resize: vertical; }
     if (why) { fixBlockedDialog(why); return; }
     var pos = posOf(nr);
     if (!pos.length) { dialog('<h3>Keine Produkte</h3><p>Zu diesem Auftrag gibt es im Blatt «Positionen» keine Produkte.</p><div class="acts"><button class="btn primary" data-act="close">OK</button></div>'); return; }
-    var betrag = ov(r, 'Betrag CHF'), liste = ov(r, 'Listenpreis CHF');
+    var betrag = ov(r, 'Betrag CHF'), liste = ov(r, 'Listenpreis CHF'), pa = trimmed(ov(r, 'Preisart'));
+    // Preisart aus Excel; bei älteren Aufträgen ohne Preisart: vereinbart, wenn der Betrag vom Listenpreis abweicht
+    var paKey = pa === 'Pro m²' ? 'm2' : pa === 'Vereinbart' ? 'vereinbart' : pa === 'Liste' ? 'liste'
+      : (hasVal(liste) && hasVal(betrag) && !sameVal(liste, betrag) ? 'vereinbart' : 'liste');
     var snap = {
       customer: { vorname: trimmed(ov(r, 'Vorname')), nachname: trimmed(ov(r, 'Nachname')), strasse: trimmed(ov(r, 'Strasse')), plz: trimmed(ov(r, 'PLZ')),
         ort: trimmed(ov(r, 'Ort')), telefon: trimmed(ov(r, 'Telefon')), email: trimmed(ov(r, 'E-Mail')) },
       elements: pos.map(elemFromPos),
-      // vereinbarter Preis nur, wenn er vom Listenpreis abweicht (alte Aufträge haben keinen Listenpreis)
-      vereinbart: hasVal(liste) && hasVal(betrag) && !sameVal(liste, betrag) ? numTxt(betrag) : ''
+      preisart: paKey,
+      vereinbart: paKey === 'vereinbart' ? numTxt(betrag) : ''
     };
     var fix = { nr: nr, kind: trimmed(ov(r, 'Verkaufsart')) === 'Offerte' ? 'offerte' : 'direkt', folderUrl: trimmed(ov(r, 'Ordner-Link')), fileUrl: trimmed(ov(r, 'Dokument-Link')) };
     function go() { ord.sel = null; $('ordDetail').hidden = true; $('ordListView').hidden = false; startFix(fix, snap); window.scrollTo(0, 0); }
@@ -1863,7 +1912,7 @@ textarea.in { min-height: 64px; resize: vertical; }
       if (newRows.length > oldIdx.length) await addRows('tblPositionen', newRows.slice(oldIdx.length));
       // Auftragszeile: Kunde, Summen, Datum (die Offerte gilt ab heute), Links
       var map = { 'Vorname': trimmed(c.vorname), 'Nachname': trimmed(c.nachname), 'Strasse': trimmed(c.strasse), 'PLZ': trimmed(c.plz), 'Ort': trimmed(c.ort),
-        'Telefon': trimmed(c.telefon), 'E-Mail': trimmed(c.email), 'Anzahl Produkte': tt.count, 'Fläche m²': tt.area, 'Betrag CHF': tt.total, 'Listenpreis CHF': tt.list,
+        'Telefon': trimmed(c.telefon), 'E-Mail': trimmed(c.email), 'Anzahl Produkte': tt.count, 'Fläche m²': tt.area, 'Betrag CHF': tt.total, 'Listenpreis CHF': tt.list, 'Preisart': tt.art,
         'Erfasst am': excelDate(now), 'Dokument-Link': file.webUrl, 'Ordner-Link': folder.webUrl };
       Object.keys(map).forEach(function (h) { if (H.indexOf(h) < 0) delete map[h]; });
       await writeOrderCells(k.nr, map);
@@ -2578,7 +2627,10 @@ textarea.in { min-height: 64px; resize: vertical; }
     var folder = '';
     try { folder = decodeURIComponent(trimmed(ov(r, 'Ordner-Link')).split('/').pop()); } catch (e) { folder = ''; }
     if (!folder) folder = safeName(nr + ' Offerte ' + person);
-    return { pos: pos, cust: cust, person: person, folder: folder, totals: { total: total, count: pos.length, area: Number(ov(r, 'Fläche m²')) || 0 } };
+    // Ohne Einzelpreise bei Preisart «Pro m²» und «Vereinbart»; ältere Aufträge ohne Preisart: wenn der Betrag vom Listenpreis abweicht
+    var pa = trimmed(ov(r, 'Preisart')), li = ov(r, 'Listenpreis CHF'), be = ov(r, 'Betrag CHF');
+    var hide = pa ? pa !== 'Liste' : (hasVal(li) && hasVal(be) && !sameVal(li, be));
+    return { pos: pos, cust: cust, person: person, folder: folder, totals: { total: total, count: pos.length, area: Number(ov(r, 'Fläche m²')) || 0, hide: hide } };
   }
   function saveOrderPdf(folder, fileName, pdf) {
     return graph('PUT', '/me/drive/root:/' + encPath(CONFIG.basePath + '/' + CONFIG.ordersFolder + '/' + folder + '/' + fileName) + ':/content', pdf, 'application/pdf');
@@ -2864,6 +2916,7 @@ textarea.in { min-height: 64px; resize: vertical; }
   // ================= Start =================
   state = restore(KEY_STATE);
   if (!state || !Array.isArray(state.elements) || !state.form) state = emptyState();
+  if (!state.preisart) state.preisart = trimmed(state.vereinbart) ? 'vereinbart' : 'liste';   // Erfassungen von vor v8c
   fillSelects();
   renderAll(true);
   var startTab = null; try { startTab = sessionStorage.getItem('flyguard-reiter'); } catch (e) { startTab = null; }
